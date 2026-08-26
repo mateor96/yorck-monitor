@@ -1,0 +1,486 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Yorck Monitor</title>
+<style>
+  :root{
+    --bg:#0e0f13; --panel:#161821; --panel-2:#1d202b; --line:#272b39;
+    --fg:#e8eaf0; --dim:#8b90a3; --faint:#5c6274;
+    --green:#3ddc84; --green-dim:#1d6b43; --red:#ff6b6b; --amber:#ffb454;
+    --accent:#7aa2ff;
+    --mono:ui-monospace,SFMono-Regular,"SF Mono",Menlo,monospace;
+  }
+  *{box-sizing:border-box}
+  html,body{margin:0;height:100%}
+  body{
+    background:var(--bg); color:var(--fg);
+    font:13px/1.45 -apple-system,BlinkMacSystemFont,"Segoe UI",Inter,sans-serif;
+    -webkit-font-smoothing:antialiased;
+    display:flex; flex-direction:column; min-height:100%;
+  }
+  button{font:inherit;color:inherit;background:none;border:0;cursor:pointer}
+  select{
+    font:inherit; color:inherit; background:var(--panel-2);
+    border:1px solid var(--line); border-radius:7px; padding:6px 8px; width:100%;
+    appearance:none; cursor:pointer;
+  }
+  select:focus{outline:1px solid var(--accent)}
+  ::-webkit-scrollbar{width:9px;height:9px}
+  ::-webkit-scrollbar-thumb{background:#2b3040;border-radius:9px}
+  ::-webkit-scrollbar-track{background:transparent}
+
+  /* ---------- header ---------- */
+  header{
+    position:sticky; top:0; z-index:5; background:rgba(14,15,19,.92);
+    backdrop-filter:blur(8px); border-bottom:1px solid var(--line);
+    padding:10px 14px; display:flex; align-items:center; gap:10px;
+  }
+  .dot{width:8px;height:8px;border-radius:50%;background:var(--faint);flex:none}
+  .dot.live{background:var(--green);box-shadow:0 0 0 0 rgba(61,220,132,.6);animation:pulse 2.4s infinite}
+  .dot.busy{background:var(--accent);animation:pulse .9s infinite}
+  .dot.warn{background:var(--amber)}
+  @keyframes pulse{0%{box-shadow:0 0 0 0 rgba(61,220,132,.5)}70%{box-shadow:0 0 0 7px rgba(61,220,132,0)}100%{box-shadow:0 0 0 0 rgba(61,220,132,0)}}
+  h1{font-size:13px;font-weight:600;margin:0;letter-spacing:.2px}
+  .head-sub{color:var(--dim);font-size:11px;font-family:var(--mono)}
+  .spacer{flex:1}
+  .icon-btn{
+    border:1px solid var(--line); border-radius:7px; padding:4px 9px;
+    color:var(--dim); font-size:11px; background:var(--panel);
+  }
+  .icon-btn:hover{color:var(--fg);border-color:#3a4055}
+
+  main{flex:1;padding:12px 14px 20px;display:flex;flex-direction:column;gap:14px}
+
+  section{background:var(--panel);border:1px solid var(--line);border-radius:11px}
+  .sec-head{
+    display:flex;align-items:center;gap:8px;padding:9px 12px;
+    font-size:11px;font-weight:600;letter-spacing:.7px;text-transform:uppercase;
+    color:var(--dim); cursor:pointer; user-select:none;
+  }
+  .sec-head .count{color:var(--faint);font-weight:400;letter-spacing:0;text-transform:none}
+  .sec-body{padding:0 12px 12px}
+  .chev{transition:transform .15s;color:var(--faint);font-size:9px;line-height:1;width:9px;display:inline-block}
+  .collapsed .chev{transform:rotate(-90deg)}
+  .collapsed .sec-body{display:none}
+
+  /* ---------- picker ---------- */
+  .field{margin-bottom:8px}
+  .field label{display:block;font-size:10px;text-transform:uppercase;letter-spacing:.6px;color:var(--faint);margin-bottom:4px}
+  .row2{display:flex;gap:8px}
+  .row2>*{flex:1;min-width:0}
+
+  .shows{margin-top:10px;max-height:290px;overflow-y:auto;display:flex;flex-direction:column;gap:5px}
+  .show{
+    display:flex;align-items:center;gap:9px;padding:7px 9px;border-radius:8px;
+    background:var(--panel-2);border:1px solid transparent;cursor:pointer;
+  }
+  .show:hover{border-color:#39405a}
+  .show .t{font-family:var(--mono);font-size:12px;color:var(--fg);flex:none;width:38px}
+  .show .n{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .show .meta{font-size:10px;color:var(--faint);margin-left:6px}
+  .show.is-watched{opacity:.45;cursor:default}
+  .show.is-watched:hover{border-color:transparent}
+  .pill{
+    font-family:var(--mono);font-size:10px;padding:2px 7px;border-radius:999px;flex:none;
+    border:1px solid transparent;
+  }
+  .pill.sold_out{color:var(--red);background:rgba(255,107,107,.1);border-color:rgba(255,107,107,.25)}
+  .pill.available{color:var(--green);background:rgba(61,220,132,.1);border-color:rgba(61,220,132,.25)}
+  .pill.unknown,.pill.gone,.pill.closed,.pill.past{color:var(--faint);background:#22263180}
+  .empty{color:var(--faint);font-size:12px;padding:14px 2px;text-align:center}
+
+  /* ---------- watch cards ---------- */
+  .cards{display:flex;flex-direction:column;gap:9px}
+  .card{
+    background:var(--panel-2);border:1px solid var(--line);border-radius:10px;
+    padding:10px 11px;position:relative;overflow:hidden;
+  }
+  .card.free{
+    border-color:var(--green);background:linear-gradient(180deg,rgba(61,220,132,.13),rgba(61,220,132,.03));
+  }
+  .card.free.alerting{animation:flash 1.4s ease-in-out infinite}
+  @keyframes flash{0%,100%{box-shadow:0 0 0 0 rgba(61,220,132,0)}50%{box-shadow:0 0 22px -2px rgba(61,220,132,.5)}}
+  .card.paused{opacity:.5}
+  .card-top{display:flex;align-items:flex-start;gap:8px}
+  .title{font-weight:600;font-size:14px;line-height:1.25;flex:1;min-width:0}
+  .sub{color:var(--dim);font-size:11px;margin-top:2px}
+  .status-line{display:flex;align-items:center;gap:8px;margin-top:9px}
+  .status{font-family:var(--mono);font-size:17px;font-weight:600;letter-spacing:-.3px}
+  .status.sold_out{color:var(--red)}
+  .status.available{color:var(--green)}
+  .status.unknown,.status.gone,.status.closed,.status.past{color:var(--faint);font-size:14px}
+  .checked{color:var(--faint);font-size:10px;font-family:var(--mono);margin-left:auto}
+
+  .dots{display:flex;gap:2px;margin-top:9px;height:14px;align-items:flex-end}
+  .dots i{width:4px;border-radius:1px;background:var(--faint);opacity:.5}
+  .dots i.sold_out{background:var(--red);height:5px;opacity:.75}
+  .dots i.available{background:var(--green);height:14px;opacity:1}
+  .dots i.other{background:var(--faint);height:3px}
+
+  .actions{display:flex;gap:6px;margin-top:10px;align-items:center}
+  .btn{
+    border:1px solid var(--line);border-radius:7px;padding:5px 10px;font-size:11px;
+    color:var(--dim);background:var(--panel);
+    display:inline-block;text-decoration:none;line-height:1.35;
+  }
+  .btn:hover{color:var(--fg);border-color:#3a4055}
+  .btn.primary{
+    background:var(--green);color:#06200f;border-color:var(--green);font-weight:600;
+    padding:6px 13px;font-size:12px;
+  }
+  .btn.primary:hover{filter:brightness(1.08)}
+  .btn.danger:hover{color:var(--red);border-color:rgba(255,107,107,.4)}
+
+  /* ---------- log ---------- */
+  .log{max-height:190px;overflow-y:auto;font-family:var(--mono);font-size:11px;display:flex;flex-direction:column-reverse}
+  .log div{padding:2px 0;color:var(--dim);border-bottom:1px solid #1b1e28}
+  .log .ts{color:var(--faint);margin-right:7px}
+  .log .hit{color:var(--green)}
+  .log .warn,.log .error{color:var(--amber)}
+
+  footer{padding:0 14px 14px;color:var(--faint);font-size:10px;font-family:var(--mono);display:flex;gap:10px;flex-wrap:wrap}
+  .toast{
+    position:fixed;left:14px;right:14px;bottom:14px;background:#2a1e1e;border:1px solid #58343a;
+    color:#ffb4b4;padding:9px 11px;border-radius:9px;font-size:11px;z-index:20;display:none;
+  }
+</style>
+</head>
+<body>
+
+<header>
+  <span class="dot" id="dot"></span>
+  <div>
+    <h1>Yorck Monitor</h1>
+    <div class="head-sub" id="head-sub">starting…</div>
+  </div>
+  <span class="spacer"></span>
+  <button class="icon-btn" id="check-now" title="Check right now">check now</button>
+</header>
+
+<main>
+  <section id="sec-add">
+    <div class="sec-head" data-toggle="sec-add">
+      <span class="chev">▾</span> Add a screening
+    </div>
+    <div class="sec-body">
+      <div class="row2">
+        <div class="field">
+          <label for="cinema">Cinema</label>
+          <select id="cinema"><option>loading…</option></select>
+        </div>
+        <div class="field">
+          <label for="date">Day</label>
+          <select id="date"><option>–</option></select>
+        </div>
+      </div>
+      <div class="shows" id="shows"><div class="empty">Pick a cinema.</div></div>
+    </div>
+  </section>
+
+  <section id="sec-watch">
+    <div class="sec-head" data-toggle="sec-watch">
+      <span class="chev">▾</span> Watching <span class="count" id="watch-count"></span>
+    </div>
+    <div class="sec-body">
+      <div class="cards" id="cards"><div class="empty">Nothing watched yet.</div></div>
+    </div>
+  </section>
+
+  <section id="sec-log">
+    <div class="sec-head" data-toggle="sec-log">
+      <span class="chev">▾</span> Activity
+      <span class="spacer"></span>
+      <span class="count" id="net-count"></span>
+    </div>
+    <div class="sec-body">
+      <div class="field" style="margin-bottom:10px">
+        <label for="interval">Check every</label>
+        <select id="interval">
+          <option value="60">60 seconds</option>
+          <option value="90">90 seconds</option>
+          <option value="120">2 minutes</option>
+          <option value="300">5 minutes</option>
+          <option value="600">10 minutes</option>
+        </select>
+      </div>
+      <div class="log" id="log"></div>
+    </div>
+  </section>
+</main>
+
+<footer>
+  <span id="foot-net"></span>
+  <span class="spacer"></span>
+  <span>read-only · never books</span>
+</footer>
+
+<div class="toast" id="toast"></div>
+
+<script>
+const $ = s => document.querySelector(s);
+let STATE = null, PROG = null, alerting = false, audioCtx = null;
+
+/* ---------- helpers ---------- */
+const pad = n => String(n).padStart(2, '0');
+const clock = ts => { const d = new Date(ts * 1000); return pad(d.getHours()) + ':' + pad(d.getMinutes()) + ':' + pad(d.getSeconds()); };
+const ago = ts => { if (!ts) return '–'; const s = Math.max(0, Math.round(Date.now() / 1000 - ts)); return s < 60 ? s + 's ago' : Math.round(s / 60) + 'm ago'; };
+const esc = s => String(s ?? '').replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+
+const STATUS_TEXT = {
+  available: n => (n === 1 ? '1 seat free' : n + ' seats free'),
+  sold_out: () => 'SOLD OUT',
+  closed: () => 'sales closed',
+  gone: () => 'not listed',
+  past: () => 'screening over',
+  unknown: () => 'no data yet',
+};
+const statusText = (s, n) => (STATUS_TEXT[s] || (() => 'waiting…'))(n);
+
+function toast(msg) {
+  const t = $('#toast');
+  t.textContent = msg; t.style.display = 'block';
+  clearTimeout(toast._t); toast._t = setTimeout(() => t.style.display = 'none', 6000);
+}
+
+async function api(path, opts) {
+  const r = await fetch(path, opts);
+  const data = await r.json().catch(() => ({}));
+  if (!r.ok) throw new Error(data.error || ('HTTP ' + r.status));
+  return data;
+}
+const post = (path, body) => api(path, {
+  method: 'POST', headers: { 'Content-Type': 'application/json' },
+  body: JSON.stringify(body || {}),
+});
+
+/* ---------- alerting: sound + notification + title ---------- */
+function beep() {
+  if (!STATE?.settings?.sound) return;
+  try {
+    audioCtx = audioCtx || new (window.AudioContext || window.webkitAudioContext)();
+    if (audioCtx.state === 'suspended') audioCtx.resume();
+    [0, 0.18, 0.36].forEach((t, i) => {
+      const o = audioCtx.createOscillator(), g = audioCtx.createGain();
+      o.type = 'sine'; o.frequency.value = [880, 1170, 1400][i];
+      g.gain.setValueAtTime(0.0001, audioCtx.currentTime + t);
+      g.gain.exponentialRampToValueAtTime(0.22, audioCtx.currentTime + t + 0.02);
+      g.gain.exponentialRampToValueAtTime(0.0001, audioCtx.currentTime + t + 0.16);
+      o.connect(g); g.connect(audioCtx.destination);
+      o.start(audioCtx.currentTime + t); o.stop(audioCtx.currentTime + t + 0.18);
+    });
+  } catch (e) { /* audio blocked until first click; fine */ }
+}
+
+let alertTimer = null;
+function setAlerting(on, watches) {
+  if (on === alerting) return;
+  alerting = on;
+  clearInterval(alertTimer); alertTimer = null;
+  if (on) {
+    beep();
+    alertTimer = setInterval(beep, 8000);
+    document.title = '🎟 TICKETS FREE — Yorck Monitor';
+    const w = watches[0];
+    if (w && typeof Notification !== 'undefined' && Notification.permission === 'granted') {
+      new Notification('Tickets free: ' + w.film_title,
+        { body: w.cinema_name + ' · ' + w.date_label + ' · ' + statusText(w.status, w.seats), tag: w.id });
+    }
+  } else {
+    document.title = 'Yorck Monitor';
+  }
+}
+
+/* ---------- header ---------- */
+function renderHead(s) {
+  const p = s.poller, dot = $('#dot');
+  let cls = 'dot', sub;
+  if (p.backoff_until && p.backoff_until > s.now) {
+    cls += ' warn';
+    sub = 'paused ' + Math.ceil((p.backoff_until - s.now) / 60) + ' min (rate limited)';
+  } else if (p.checking) {
+    cls += ' busy'; sub = 'checking…';
+  } else if (s.watches.some(w => w.active && w.status !== 'past')) {
+    cls += ' live';
+    const left = p.next_check ? Math.max(0, Math.round(p.next_check - s.now)) : null;
+    sub = left === null ? 'watching' : 'next check in ' + left + 's';
+  } else {
+    sub = 'idle · nothing watched';
+  }
+  dot.className = cls;
+  $('#head-sub').textContent = sub;
+  $('#net-count').textContent = s.net.requests + ' requests';
+  const push = [s.push?.ntfy && 'phone', s.push?.telegram && 'telegram'].filter(Boolean);
+  $('#foot-net').textContent =
+    s.net.requests + ' requests · ' + (s.net.bytes / 1024 / 1024).toFixed(1) + ' MB · ' +
+    s.net.errors + ' errors · last check ' + ago(p.last_check) +
+    ' · push: ' + (push.length ? push.join('+') : 'desktop only');
+}
+
+/* ---------- watch cards ---------- */
+function renderCards(s) {
+  const box = $('#cards');
+  $('#watch-count').textContent = s.watches.length ? '(' + s.watches.length + ')' : '';
+  if (!s.watches.length) {
+    box.innerHTML = '<div class="empty">Nothing watched yet.</div>';
+    return;
+  }
+  const order = { available: 0, sold_out: 1, unknown: 2, closed: 3, gone: 4, past: 5 };
+  const list = [...s.watches].sort((a, b) =>
+    (order[a.status] ?? 2) - (order[b.status] ?? 2) || a.start.localeCompare(b.start));
+
+  box.innerHTML = list.map(w => {
+    const st = w.status || 'unknown';
+    const free = st === 'available';
+    const dots = (w.history || []).slice(-40).map(h =>
+      `<i class="${h.s === 'available' ? 'available' : h.s === 'sold_out' ? 'sold_out' : 'other'}" title="${clock(h.t)} · ${statusText(h.s, h.n)}"></i>`).join('');
+    return `
+    <div class="card ${free ? 'free' : ''} ${w.alert ? 'alerting' : ''} ${w.active ? '' : 'paused'}">
+      <div class="card-top">
+        <div class="title">${esc(w.film_title)}
+          <div class="sub">${esc(w.cinema_name)} · ${esc(w.date_label)}${w.formats?.length ? ' · ' + esc(w.formats.join('/')) : ''}</div>
+        </div>
+      </div>
+      <div class="status-line">
+        <span class="status ${st}">${statusText(st, w.seats)}</span>
+        <span class="checked">${w.checks || 0} checks · ${ago(w.last_checked)}</span>
+      </div>
+      <div class="dots">${dots}</div>
+      <div class="actions">
+        ${free ? `<a class="btn primary" href="${esc(w.booking_url)}" target="_blank" rel="noopener"
+                     data-ack="${w.id}">Book now →</a>` : ''}
+        ${w.alert ? `<button class="btn" data-act="ack" data-id="${w.id}">quiet</button>` : ''}
+        <a class="btn" href="${esc(w.listing_url)}" target="_blank" rel="noopener">page</a>
+        <span class="spacer" style="flex:1"></span>
+        <button class="btn" data-act="${w.active ? 'pause' : 'resume'}" data-id="${w.id}">${w.active ? 'pause' : 'resume'}</button>
+        <button class="btn danger" data-act="remove" data-id="${w.id}">remove</button>
+      </div>
+    </div>`;
+  }).join('');
+
+  const free = list.filter(w => w.alert && w.status === 'available');
+  setAlerting(free.length > 0, free);
+}
+
+/* ---------- log ---------- */
+function renderLog(s) {
+  $('#log').innerHTML = s.log.slice(-120).map(e =>
+    `<div><span class="ts">${clock(e.t)}</span><span class="${e.level}">${esc(e.text)}</span></div>`).join('');
+}
+
+/* ---------- picker ---------- */
+async function loadCinemas() {
+  try {
+    const { cinemas } = await api('/api/cinemas');
+    const sel = $('#cinema');
+    sel.innerHTML = '<option value="">— pick a cinema —</option>' +
+      cinemas.map(c => `<option value="${esc(c.slug)}">${esc(c.name)}</option>`).join('');
+    const last = localStorage.getItem('cinema');
+    if (last && cinemas.some(c => c.slug === last)) { sel.value = last; loadDates(); }
+  } catch (e) { toast('Could not load cinemas: ' + e.message); }
+}
+
+async function loadDates() {
+  const slug = $('#cinema').value;
+  const dsel = $('#date');
+  if (!slug) { dsel.innerHTML = '<option>–</option>'; $('#shows').innerHTML = '<div class="empty">Pick a cinema.</div>'; return; }
+  localStorage.setItem('cinema', slug);
+  dsel.innerHTML = '<option>loading…</option>';
+  $('#shows').innerHTML = '<div class="empty">loading programme…</div>';
+  try {
+    PROG = await api('/api/programme?cinema=' + encodeURIComponent(slug));
+    const today = new Date().toISOString().slice(0, 10);
+    const dates = PROG.dates.filter(d => d >= today);
+    if (!dates.length) { dsel.innerHTML = '<option>–</option>'; $('#shows').innerHTML = '<div class="empty">No upcoming screenings.</div>'; return; }
+    dsel.innerHTML = dates.map(d => {
+      const dt = new Date(d + 'T12:00');
+      const name = d === today ? 'Today' : dt.toLocaleDateString(undefined, { weekday: 'short' });
+      return `<option value="${d}">${name} ${d.slice(8, 10)}.${d.slice(5, 7)}.</option>`;
+    }).join('');
+    loadShows();
+  } catch (e) {
+    dsel.innerHTML = '<option>–</option>';
+    $('#shows').innerHTML = `<div class="empty">${esc(e.message)}</div>`;
+  }
+}
+
+async function loadShows() {
+  const slug = $('#cinema').value, date = $('#date').value;
+  if (!slug || !date) return;
+  $('#shows').innerHTML = '<div class="empty">checking seats…</div>';
+  try {
+    const d = await api(`/api/showtimes?cinema=${encodeURIComponent(slug)}&date=${date}`);
+    if (!d.showtimes.length) { $('#shows').innerHTML = '<div class="empty">Nothing on this day.</div>'; return; }
+    $('#shows').innerHTML = d.showtimes.map(r => `
+      <div class="show ${r.watched ? 'is-watched' : ''}"
+           data-session="${esc(r.session_id)}" data-alloc="${r.allocated ? 1 : 0}">
+        <span class="t">${esc(r.time)}</span>
+        <span class="n">${esc(r.film_title)}${r.formats?.length ? `<span class="meta">${esc(r.formats.join('/'))}</span>` : ''}</span>
+        <span class="pill ${r.status}">${r.watched ? 'watching' : r.status === 'available' ? r.seats + ' free' : r.status === 'sold_out' ? 'sold out' : '?'}</span>
+      </div>`).join('');
+  } catch (e) {
+    $('#shows').innerHTML = `<div class="empty">${esc(e.message)}</div>`;
+  }
+}
+
+/* ---------- events ---------- */
+document.addEventListener('click', async ev => {
+  // Browsers keep audio muted until the page has been clicked once.
+  if (!audioCtx) { try { audioCtx = new (window.AudioContext || window.webkitAudioContext)(); } catch (e) {} }
+  const tog = ev.target.closest('[data-toggle]');
+  if (tog) { $('#' + tog.dataset.toggle).classList.toggle('collapsed'); return; }
+
+  const ack = ev.target.closest('[data-ack]');
+  if (ack) { post(`/api/watch/${ack.dataset.ack}/ack`).then(refresh); return; }
+
+  const act = ev.target.closest('[data-act]');
+  if (act) {
+    try { await post(`/api/watch/${act.dataset.id}/${act.dataset.act}`); await refresh(); }
+    catch (e) { toast(e.message); }
+    return;
+  }
+
+  const show = ev.target.closest('.show');
+  if (show && !show.classList.contains('is-watched')) {
+    show.classList.add('is-watched');
+    try {
+      await post('/api/watch', {
+        cinema: $('#cinema').value,
+        session_id: show.dataset.session,
+        allocated: show.dataset.alloc === '1',
+      });
+      await refresh();
+      loadShows();
+      if (typeof Notification !== 'undefined' && Notification.permission === 'default')
+        Notification.requestPermission();
+    } catch (e) { toast(e.message); show.classList.remove('is-watched'); }
+  }
+});
+
+$('#cinema').addEventListener('change', loadDates);
+$('#date').addEventListener('change', loadShows);
+$('#check-now').addEventListener('click', () => post('/api/check-now').then(() => setTimeout(refresh, 400)));
+$('#interval').addEventListener('change', e =>
+  post('/api/settings', { interval: +e.target.value }).catch(err => toast(err.message)));
+
+/* ---------- loop ---------- */
+async function refresh() {
+  try {
+    STATE = await api('/api/state');
+    renderHead(STATE); renderCards(STATE); renderLog(STATE);
+    const iv = $('#interval');
+    if (document.activeElement !== iv) iv.value = String(STATE.settings.interval);
+  } catch (e) {
+    $('#head-sub').textContent = 'server not reachable';
+    $('#dot').className = 'dot warn';
+  }
+}
+
+/* Local ticks are free — they only hit our own process, never yorck.de. */
+setInterval(refresh, 1000);
+refresh();
+loadCinemas();
+</script>
+</body>
+</html>

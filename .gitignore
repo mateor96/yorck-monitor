@@ -1,0 +1,8 @@
+__pycache__/
+*.py[cod]
+.DS_Store
+
+# Local state: watches, settings and the ntfy push topic.
+# Lives in ~/.yorck_monitor/ by default, but never commit a copy.
+state.json
+.yorck_monitor/
