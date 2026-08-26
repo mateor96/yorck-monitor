@@ -20,6 +20,8 @@
     --red-soft:color-mix(in srgb, var(--red) 14%, transparent);
     --red-line:color-mix(in srgb, var(--red) 32%, transparent);
     --glow:color-mix(in srgb, var(--green) 45%, transparent);
+    --accent-soft:color-mix(in srgb, var(--accent) 20%, transparent);
+    --amber-soft:color-mix(in srgb, var(--amber) 20%, transparent);
     --hairline:color-mix(in srgb, var(--line) 55%, transparent);
     --hover-line:color-mix(in srgb, var(--line) 55%, var(--fg));
     --hd-bg:color-mix(in srgb, var(--bg) 92%, transparent);
@@ -102,6 +104,9 @@
   .pill.sold_out{color:var(--red);background:var(--red-soft);border-color:var(--red-line)}
   .pill.available{color:var(--green);background:var(--green-soft);border-color:var(--green-line)}
   .pill.unknown,.pill.gone,.pill.closed,.pill.past{color:var(--faint);background:var(--hairline)}
+  .hint{font-size:10.5px;color:var(--faint);margin-top:5px;line-height:1.4}
+  .opt{display:flex;align-items:center;gap:7px;margin:0 0 10px;font-size:11.5px;color:var(--dim);cursor:pointer}
+  .opt input{accent-color:var(--green);cursor:pointer}
   .empty{color:var(--faint);font-size:12px;padding:14px 2px;text-align:center}
 
   /* ---------- watch cards ---------- */
@@ -125,6 +130,8 @@
   .status.available{color:var(--green)}
   .status.unknown,.status.gone,.status.closed,.status.past{color:var(--faint);font-size:14px}
   .checked{color:var(--faint);font-size:10px;font-family:var(--mono);margin-left:auto}
+  .lastfree{color:var(--faint);font-size:10px;font-family:var(--mono);text-align:right;margin-top:3px}
+  .lastfree b{color:var(--dim);font-weight:600}
 
   .dots{display:flex;gap:2px;margin-top:9px;height:14px;align-items:flex-end}
   .dots i{width:4px;border-radius:1px;background:var(--faint);opacity:.5}
@@ -132,7 +139,21 @@
   .dots i.available{background:var(--green);height:14px;opacity:1}
   .dots i.other{background:var(--faint);height:3px}
 
-  .actions{display:flex;gap:6px;margin-top:10px;align-items:center}
+  /* Einstellung, keine Aktion: nur so breit wie noetig, und in einer eigenen
+     Farbfamilie je Stufe -- Gruen ist hier schon fuer "Platz frei" vergeben. */
+  .modes{display:inline-flex;border:1px solid var(--line);border-radius:6px;overflow:hidden;flex:none}
+  .seg{
+    padding:4px 8px;font-size:10px;color:var(--faint);background:transparent;
+    border-right:1px solid var(--line);white-space:nowrap;letter-spacing:.2px;
+  }
+  .seg:last-child{border-right:0}
+  .seg:hover:not(.on):not(.na){color:var(--fg);background:var(--hairline)}
+  .seg.on{font-weight:600}
+  .seg.on[data-mode="off"]  {background:var(--hairline);   color:var(--dim)}
+  .seg.on[data-mode="open"] {background:var(--accent-soft);color:var(--accent)}
+  .seg.on[data-mode="auto"] {background:var(--amber-soft); color:var(--amber)}
+  .seg.na{opacity:.3;cursor:not-allowed}
+  .actions{display:flex;flex-wrap:wrap;gap:6px;margin-top:10px;align-items:center}
   .btn{
     border:1px solid var(--line);border-radius:7px;padding:5px 10px;font-size:11px;
     color:var(--dim);background:var(--panel);
@@ -236,6 +257,12 @@
 
 <script>
 const $ = s => document.querySelector(s);
+const MODE_LABEL = { off: 'melden', open: 'öffnen', auto: 'auto' };
+const MODE_TIP = {
+  off:  'Ton, Desktop-Meldung und Handy-Push. Sonst nichts.',
+  open: 'Öffnet den Checkout in deinem Chrome. Ticketart und Bestätigung machst du.',
+  auto: 'Wählt „Yorck Unlimited“ und schließt die Buchung ab.',
+};
 let STATE = null, PROG = null, alerting = false, audioCtx = null;
 
 /* ---------- helpers ---------- */
@@ -253,6 +280,19 @@ const STATUS_TEXT = {
   unknown: () => 'no data yet',
 };
 const statusText = (s, n) => (STATUS_TEXT[s] || (() => 'waiting…'))(n);
+
+/* Wann zuletzt ein Platz online war. Heute nur die Uhrzeit, sonst mit Datum --
+   die Jahreszahl hilft hier niemandem und kostet nur Breite. */
+function lastFree(w) {
+  if (w.status === 'available') return 'frei · <b>jetzt</b>';
+  if (!w.last_free_at) return 'noch kein Platz gesehen';
+  const d = new Date(w.last_free_at * 1000), now = new Date();
+  const t = pad(d.getHours()) + ':' + pad(d.getMinutes());
+  const sameDay = d.toDateString() === now.toDateString();
+  const when = sameDay ? t : `${pad(d.getDate())}.${pad(d.getMonth() + 1)}. ${t}`;
+  const n = w.last_free_seats;
+  return `zuletzt frei · <b>${when}</b>` + (n ? ` · ${n} ${n === 1 ? 'Platz' : 'Plätze'}` : '');
+}
 
 function toast(msg) {
   const t = $('#toast');
@@ -362,8 +402,18 @@ function renderCards(s) {
         <span class="status ${st}">${statusText(st, w.seats)}</span>
         <span class="checked">${w.checks || 0} checks · ${ago(w.last_checked)}</span>
       </div>
+      <div class="lastfree">${lastFree(w)}</div>
       <div class="dots">${dots}</div>
       <div class="actions">
+        <div class="modes" role="group" aria-label="Wenn ein Platz frei wird">
+          ${['off', 'open', 'auto'].map(m => {
+            const na = m === 'auto' && w.allocated;
+            return `<button class="seg ${(w.checkout_mode || 'open') === m ? 'on' : ''} ${na ? 'na' : ''}"
+                      data-mode="${m}" data-id="${w.id}" ${na ? 'disabled' : ''}
+                      title="${esc(MODE_TIP[m] + (na ? ' — hier nicht möglich: Kino mit Sitzplatzwahl' : ''))}"
+                    >${MODE_LABEL[m]}</button>`;
+          }).join('')}
+        </div>
         ${free ? `<a class="btn primary" href="${esc(w.booking_url)}" target="_blank" rel="noopener"
                      data-ack="${w.id}">Book now →</a>` : ''}
         ${w.alert ? `<button class="btn" data-act="ack" data-id="${w.id}">quiet</button>` : ''}
@@ -449,6 +499,13 @@ document.addEventListener('click', async ev => {
 
   const ack = ev.target.closest('[data-ack]');
   if (ack) { post(`/api/watch/${ack.dataset.ack}/ack`).then(refresh); return; }
+
+  const seg = ev.target.closest('.seg');
+  if (seg && !seg.disabled) {
+    try { await post(`/api/watch/${seg.dataset.id}/mode`, { mode: seg.dataset.mode }); await refresh(); }
+    catch (e) { toast(e.message); }
+    return;
+  }
 
   const act = ev.target.closest('[data-act]');
   if (act) {
