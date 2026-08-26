@@ -39,6 +39,7 @@ import urllib.request
 from datetime import datetime, timedelta
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
+import checkout_drive
 import yorck_api as api
 
 HERE = os.path.dirname(os.path.abspath(__file__))
@@ -91,10 +92,25 @@ class Store:
         with self.lock:
             self.watches = data.get("watches", [])
             self.settings.update(data.get("settings", {}))
+            # Reste frueherer Fassungen: der Modus sitzt jetzt an der Watch.
+            self.settings.pop("auto_open", None)
+            self.settings.pop("checkout_mode", None)
             for w in self.watches:
                 w.setdefault("history", [])
                 w.setdefault("alert", False)
                 w.setdefault("checks", 0)
+                if not w.get("last_free_at"):
+                    # Nachtragen fuer Beobachtungen von vor dieser Fassung.
+                    # Die Historie haelt nur 60 Eintraege (bei 60 s also eine
+                    # Stunde), also faellt sie auf freed_at zurueck -- den
+                    # Zeitpunkt des letzten Umschlags auf "frei".
+                    free = [h for h in w["history"] if h.get("s") == "available"]
+                    if free:
+                        w["last_free_at"] = free[-1]["t"]
+                        w["last_free_seats"] = free[-1].get("n")
+                    elif w.get("freed_at"):
+                        w["last_free_at"] = w["freed_at"]
+                        w["last_free_seats"] = None
 
     def save(self):
         os.makedirs(STATE_DIR, exist_ok=True)
@@ -214,6 +230,128 @@ def ntfy_topic() -> str | None:
                 store.save()
         return env
     return store.settings.get("ntfy_topic")
+
+
+CHECKOUT_MODES = ("off", "open", "auto")
+
+
+# Was eine frisch angelegte Beobachtung bekommt. Bewusst eine Konstante und
+# keine Einstellung: eine globale Vorgabe, die nur NEUE Watches betrifft, sieht
+# aus wie ein Schalter fuer alles und ist dann keiner. Der Modus gehoert an die
+# Karte, wo man auch sieht, worauf er wirkt.
+DEFAULT_CHECKOUT_MODE = "open"
+
+
+def default_mode() -> str:
+    return DEFAULT_CHECKOUT_MODE
+
+
+def watch_mode(w: dict) -> str:
+    """
+    Was bei dieser einen Vorstellung passieren soll.
+
+    Pro Watch gesetzt, weil sich das je Film unterscheidet: bei einem
+    ausverkauften Film, den man unbedingt will, soll durchgebucht werden; bei
+    einem, den man nur beobachtet, reicht eine Meldung.
+    """
+    m = w.get("checkout_mode")
+    return m if m in CHECKOUT_MODES else default_mode()
+
+
+MAX_CHECKOUT_ATTEMPTS = 3
+
+
+def grab_seat(w: dict) -> None:
+    """
+    React to a seat being available, according to this watch's own mode.
+
+      off   do nothing
+      open  open the checkout in the user's Chrome -- once; the tab stays put,
+            so reopening it every cycle would only spam tabs
+      auto  additionally pick the UNLIMITED ticket and place the order, and
+            RETRY on failure while the seat is still there
+
+    The retry is the point: an attempt can fail for reasons that pass (signed
+    out, Chrome busy, a timeout), and a single failure must not mean the ticket
+    is missed. Called on every check while the seat is available, so the guards
+    below -- not the caller -- decide whether anything happens.
+
+    Hard stops: never after a successful booking, never more than
+    MAX_CHECKOUT_ATTEMPTS orders, never two runs at once.
+
+    "auto" is refused for allocated-seating cinemas: those insert a seat-picking
+    step this flow does not know, and guessing there would book the wrong thing.
+    """
+    mode = watch_mode(w)
+    if mode == "off" or sys.platform != "darwin":
+        return
+
+    full = mode == "auto" and not w.get("allocated")
+
+    with store.lock:
+        if w.get("booked") or w.get("checkout_running"):
+            return
+        attempts = w.get("checkout_attempts", 0)
+        if not full:
+            # "open" and the allocated-seating fallback: one tab, then done.
+            if w.get("grabbed"):
+                return
+            w["grabbed"] = time.time()
+        else:
+            if attempts >= MAX_CHECKOUT_ATTEMPTS:
+                return
+            w["checkout_attempts"] = attempts + 1
+            w["grabbed"] = time.time()
+            w["checkout_running"] = True
+        n = w.get("checkout_attempts", 0)
+
+    if mode == "auto" and w.get("allocated"):
+        store.add_log("warn", f"{w['film_title']}: Vollautomatik nur ohne Sitzplatzwahl "
+                              f"-- Checkout wird nur geoeffnet", w["id"])
+
+    def run():
+        try:
+            if not full:
+                subprocess.Popen(["open", "-a", "Google Chrome", w["booking_url"]],
+                                 stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+                subprocess.Popen(["osascript", "-e",
+                                  'tell application "Google Chrome" to activate'],
+                                 stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+                store.add_log("hit", f"Checkout geoeffnet (Ticket noch selbst waehlen): "
+                                     f"{w['film_title']}", w["id"])
+                return
+
+            store.add_log("hit", f"Auto-Checkout Versuch {n}/{MAX_CHECKOUT_ATTEMPTS}: "
+                                 f"{w['film_title']}", w["id"])
+            checkout_drive.book(w["composite_id"], w["start"],
+                                log=lambda m: store.add_log("info", m, w["id"]))
+            with store.lock:
+                w["booked"] = time.time()
+            store.add_log("hit", f"GEBUCHT: {w['film_title']} - {w['date_label']}", w["id"])
+            notify_ntfy(f"Gebucht: {w['film_title']}",
+                        f"{w['cinema_name']} - {w['date_label']} - mit Unlimited",
+                        click=w["listing_url"])
+            notify_desktop("Yorck Monitor - gebucht", f"{w['film_title']}\n{w['date_label']}")
+
+        except Exception as e:
+            reason = f"{type(e).__name__}: {e}"
+            if n < MAX_CHECKOUT_ATTEMPTS:
+                store.add_log("error", f"Auto-Checkout Versuch {n} fehlgeschlagen ({reason}) "
+                                       f"-- neuer Versuch beim naechsten Check", w["id"])
+            else:
+                store.add_log("error", f"Auto-Checkout endgueltig gescheitert nach {n} "
+                                       f"Versuchen ({reason}) -- bitte selbst buchen", w["id"])
+                notify_ntfy(f"Auto-Checkout gescheitert: {w['film_title']}",
+                            f"{reason[:120]} -- bitte selbst buchen",
+                            click=w["booking_url"])
+                notify_desktop("Yorck Monitor - Auto-Checkout gescheitert",
+                               f"{w['film_title']}\n{reason[:100]}")
+        finally:
+            with store.lock:
+                w["checkout_running"] = False
+            store.save()
+
+    threading.Thread(target=run, name=f"checkout-{w['id']}", daemon=True).start()
 
 
 def notify_ntfy(title: str, text: str, click: str | None = None):
@@ -406,6 +544,11 @@ class Watcher(threading.Thread):
             w["status"] = status
             w["seats"] = seats
             w["last_checked"] = now
+            if status == "available":
+                # Wann zuletzt ueberhaupt ein Platz online war -- die Zahl, an
+                # der man ablesen kann, ob sich das Warten lohnt.
+                w["last_free_at"] = now
+                w["last_free_seats"] = seats
             w["checks"] = w.get("checks", 0) + 1
             w["history"].append({"t": now, "s": status, "n": seats})
             del w["history"][:-MAX_HISTORY]
@@ -426,6 +569,7 @@ class Watcher(threading.Thread):
                 w["freed_at"] = now
             msg = f"TICKETS FREE: {where} - {label}"
             store.add_log("hit", msg, w["id"])
+            grab_seat(w)          # zuerst den Platz sichern, dann Bescheid geben
             notify_desktop("Yorck Monitor - tickets free", f"{where}\n{label}")
             notify_ntfy(f"Tickets free: {w['film_title']}",
                         f"{w['cinema_name']} - {w['date_label']} - {label}",
@@ -434,6 +578,18 @@ class Watcher(threading.Thread):
             print("\a", end="", flush=True)
         elif status == "available":
             store.add_log("ok", f"still free: {where} - {label}", w["id"])
+            grab_seat(w)      # erneut antreten, falls ein Versuch scheiterte
+        elif prev == "available":
+            # Der Platz ist wieder weg. Alarm loeschen, sonst blinkt die Karte
+            # gruen weiter, waehrend sie AUSVERKAUFT anzeigt.
+            with store.lock:
+                w["alert"] = False
+                # Platz weg: Zaehler zuruecksetzen, damit ein spaeter erneut
+                # freier Platz wieder volle Versuche bekommt. Gebuchtes bleibt.
+                if not w.get("booked"):
+                    w["checkout_attempts"] = 0
+                    w["grabbed"] = None
+            store.add_log("warn", f"{where}: Platz wieder weg ({label})", w["id"])
         elif status != prev and prev is not None:
             store.add_log("warn", f"{where}: {prev} -> {label}", w["id"])
         else:
@@ -537,7 +693,7 @@ class Handler(BaseHTTPRequestHandler):
                 watcher.wake.set()
                 return self.json({"ok": True})
             if len(parts) == 4 and parts[:2] == ["api", "watch"]:
-                return self.watch_action(parts[2], parts[3])
+                return self.watch_action(parts[2], parts[3], self.body())
         except Exception as e:
             return self.fail(f"{type(e).__name__}: {e}", 500)
         self.fail("not found", 404)
@@ -657,6 +813,9 @@ class Handler(BaseHTTPRequestHandler):
             "date_label": start.strftime("%a %d.%m. %H:%M"),
             "formats": s["formats"],
             "allocated": allocated,
+            "checkout_mode": (b.get("checkout_mode")
+                              if b.get("checkout_mode") in CHECKOUT_MODES
+                              else default_mode()),
             "booking_url": api.booking_url(s["id"], allocated),
             "listing_url": api.listing_url(cinema["slug"], s["date"], film["slug"]),
             "active": True,
@@ -676,7 +835,7 @@ class Handler(BaseHTTPRequestHandler):
         watcher.wake.set()
         return self.json({"watch": w})
 
-    def watch_action(self, wid: str, action: str):
+    def watch_action(self, wid: str, action: str, body: dict | None = None):
         w = store.find(wid)
         if not w:
             return self.fail("no such watch", 404)
@@ -695,6 +854,18 @@ class Handler(BaseHTTPRequestHandler):
             store.add_log("info", f"{action}d {w['film_title']}", wid)
             if w["active"]:
                 watcher.wake.set()
+            return self.json({"watch": w})
+        if action == "mode":
+            mode = (body or {}).get("mode")
+            if mode not in CHECKOUT_MODES:
+                return self.fail(f"mode muss eins von {CHECKOUT_MODES} sein")
+            if mode == "auto" and w.get("allocated"):
+                return self.fail("Vollautomatik geht nur bei freier Platzwahl "
+                                 "(dieses Kino hat Sitzplatzauswahl)", 409)
+            with store.lock:
+                w["checkout_mode"] = mode
+            store.save()
+            store.add_log("info", f"{w['film_title']}: Buchungsmodus -> {mode}", wid)
             return self.json({"watch": w})
         if action == "ack":
             with store.lock:

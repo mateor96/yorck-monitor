@@ -2,7 +2,7 @@
 
 A small local dashboard that watches sold-out screenings at the
 [Yorck cinemas](https://www.yorck.de) in Berlin and tells you when a seat frees
-up. It shows; it never books.
+up.
 
 ## Why
 
@@ -23,6 +23,36 @@ Python 3.9+, no dependencies. `Ctrl+C` to stop — watches are saved and resume.
 Pick a cinema and a day, click a screening, done. Every ~90 s it re-checks and
 tells you the seat count. When something frees up the card turns green, a sound
 plays and a **Book now** button appears that links straight into the checkout.
+
+### When a seat frees up
+
+Each watched screening carries its own setting, on its card — because it
+differs per film. Something you badly want should go through on its own;
+something you are merely curious about should just say hello.
+
+| | |
+|---|---|
+| **melden** | sound, desktop notification, phone push. Nothing else. |
+| **öffnen** | additionally opens the checkout in your own Chrome. You pick the ticket and confirm. *(default)* |
+| **auto** | additionally picks *Yorck Unlimited* and places the order. |
+
+**auto** drives your own logged-in Chrome via AppleScript — no credentials are
+handled anywhere, name and email come prefilled from your account. It needs
+Chrome's *View → Developer → Allow JavaScript from Apple Events* switched on,
+and it only works at cinemas without seat selection (the open-air Sommerkino);
+elsewhere it falls back to opening the tab, because the seat-picking step is
+not implemented and guessing there would book the wrong thing.
+
+It verifies before clicking — the session id in the URL *and* the date and time
+printed on the page must both match — and again on the payment page. A failed
+attempt is retried on the next check while the seat is still there, up to three
+times, then it gives up with a push telling you why. After a successful booking
+it never runs again for that screening.
+
+Worth knowing: nothing before the final confirmation reserves anything. Opening
+the checkout starts an order session, and picking a ticket fills a basket, but
+the availability count does not move until the booking completes — I measured
+all three. Only a finished booking holds the seat.
 
 ## Notifications on your phone
 
@@ -56,9 +86,13 @@ pages, cached for 30 minutes.
 ## Being polite about it
 
 One request per cinema per cycle (~400 bytes), a 60 s floor on the interval with
-±15 % jitter, a 4 s gap between any two requests, backoff on errors, and nothing
-in the booking flow is ever touched — no orders, no seat holds. That works out
+±15 % jitter, a 4 s gap between any two requests, backoff on errors, and the polling itself
+never touches the booking flow — no orders, no seat holds. That works out
 to roughly 40 tiny requests an hour, less than leaving the page open in a tab.
+
+The exception is the checkout: opening it creates a real order session, and
+**auto** completes a booking. Both only ever fire for a seat you asked to be
+watched, at most three attempts, exactly as clicking the page yourself would.
 
 **The throttling is deliberate. Please leave it in.**
 
@@ -66,6 +100,7 @@ to roughly 40 tiny requests an hour, less than leaving the page open in a tab.
 
 `yorck_monitor.py` — server, watcher, notifications ·
 `yorck_api.py` — the yorck.de client ·
+`checkout_drive.py` — drives the checkout in your Chrome (also usable on its own) ·
 `ui.html` — the dashboard, plain HTML/CSS/JS ·
 `~/.yorck_monitor/state.json` — your watches
 
