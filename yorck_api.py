@@ -37,7 +37,10 @@ UA = ("Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 "
       "(KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36")
 
 # Hard floor between *any* two outbound requests, enforced process-wide.
-MIN_REQUEST_GAP = 4.0
+# This is the rail that keeps a misconfiguration from turning into a flood, so
+# it stays even when a watch asks for a shorter interval than it allows -- the
+# scheduler then simply cannot hit that rate, and says so.
+MIN_REQUEST_GAP = 2.0
 
 
 class RateLimited(Exception):
@@ -135,12 +138,28 @@ def fetch_cinemas() -> list[dict]:
     return out
 
 
+def _hero_image(fields: dict) -> str:
+    """The film's still from the cinema page, as an absolute URL.
+
+    Landscape 16:9, not the portrait poster -- that one lives on the film's own
+    page, which would be one extra request per film. Contentful serves it, so
+    the caller can ask for any size by appending ?w=..&h=..&fm=webp.
+    """
+    try:
+        url = fields["heroImage"]["fields"]["image"]["fields"]["file"]["url"]
+    except (KeyError, TypeError):
+        return ""
+    if not isinstance(url, str):
+        return ""
+    return "https:" + url if url.startswith("//") else url
+
+
 def fetch_programme(slug: str) -> dict:
     """
     Full programme of one cinema: every film with every upcoming showtime.
 
     Returns {"films": [...], "dates": ["YYYY-MM-DD", ...]} where each film is
-      {title, slug, vista_id, runtime, fsk, label,
+      {title, image, slug, vista_id, runtime, fsk, label,
        sessions: [{id, session_id, date, time, start, formats}]}
     `id` is the composite "<cinemaVistaId>-<sessionId>" the site uses in URLs.
     """
@@ -172,6 +191,7 @@ def fetch_programme(slug: str) -> dict:
         sessions.sort(key=lambda s: s["start"])
         films.append({
             "title": title.strip(),
+            "image": _hero_image(f),
             "slug": f.get("slug") or "",
             "vista_id": f.get("vistaId") or "",
             "runtime": f.get("runtime"),

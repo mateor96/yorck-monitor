@@ -20,9 +20,49 @@ python3 yorck_monitor.py           # or just http://localhost:4000
 
 Python 3.9+, no dependencies. `Ctrl+C` to stop — watches are saved and resume.
 
+Two tabs at the top. **Monitor** is the watcher; **Programme** is the catalogue.
+
 Pick a cinema and a day, click a screening, done. Every ~90 s it re-checks and
 tells you the seat count. When something frees up the card turns green, a sound
 plays and a **Book now** button appears that links straight into the checkout.
+
+## Finding the films nobody announces
+
+The yorck.de programme is sorted by cinema. That is fine for the film playing
+five times a day, and useless for the single 35 mm repertory screening three
+weeks out — to find that one you would have to open fifteen cinemas and click
+through every day.
+
+The **Programme** tab turns the same data inside out: one crawl of all fifteen
+cinemas, merged by film, so the film is the row and its dates are the detail.
+Sorted **rarest first** by default, which is the whole point — right now 64 of
+the 123 films on sale run exactly once in the entire upcoming programme, and
+those float to the top instead of drowning under the one that runs 41 times.
+Search, filter by cinema or by how far ahead, or flip on *rare only*.
+
+Every screening shows its live seat count. If something is free you get a
+**book** link straight into the checkout; if it is sold out you get **watch**,
+which hands it to the Monitor tab in one click. Watching is only offered for
+what you cannot buy right now — the monitor reports seats *freeing up*, so
+watching an available screening would just fire immediately.
+
+**refresh** re-reads the programme pages themselves, not just the seat counts,
+and marks what has arrived since the last look as **new** — for a week, so the
+badge survives the next three refreshes instead of clearing itself the moment
+you look again. *new only* narrows the list to those. Absence is measured
+against the previous crawl, never against the clock: not opening the tab for a
+fortnight is not the same as a film having been away, and a cinema that fails
+mid-crawl does not make its whole programme look new next time.
+
+Each row carries the film's still, and the one you open gets it as a banner.
+These are the 16:9 images from the cinema pages, which come along with the
+crawl for free — the portrait poster exists too, but only on each film's own
+page, which would mean one extra request per film. Contentful resizes them on
+request, so a row thumbnail is ~4 KB instead of the 286 KB original, and they
+load lazily as you scroll.
+
+The horizon is however far Yorck has loaded: presale reaches into next February
+at some houses.
 
 ### When a seat frees up
 
@@ -90,6 +130,13 @@ One request per cinema per cycle (~400 bytes), a 60 s floor on the interval with
 never touches the booking flow — no orders, no seat holds. That works out
 to roughly 40 tiny requests an hour, less than leaving the page open in a tab.
 
+The Programme tab costs one programme page plus one seat lookup per cinema —
+about thirty small requests for the lot, and a single seat lookup covers a
+cinema's whole horizon, months of presale in one response. That is too much to
+put on a timer next to a running watch, so it only ever runs when you actually
+open the tab, then holds for 30 minutes and is served from
+`~/.yorck_monitor/catalogue.json` in the meantime. A restart does not re-crawl.
+
 The exception is the checkout: opening it creates a real order session, and
 **auto** completes a booking. Both only ever fire for a seat you asked to be
 watched, at most three attempts, exactly as clicking the page yourself would.
@@ -102,7 +149,8 @@ watched, at most three attempts, exactly as clicking the page yourself would.
 `yorck_api.py` — the yorck.de client ·
 `checkout_drive.py` — drives the checkout in your Chrome (also usable on its own) ·
 `ui.html` — the dashboard, plain HTML/CSS/JS ·
-`~/.yorck_monitor/state.json` — your watches
+`~/.yorck_monitor/state.json` — your watches ·
+`~/.yorck_monitor/catalogue.json` — the last programme crawl
 
 ## License
 

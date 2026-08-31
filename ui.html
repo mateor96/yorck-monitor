@@ -20,8 +20,6 @@
     --red-soft:color-mix(in srgb, var(--red) 14%, transparent);
     --red-line:color-mix(in srgb, var(--red) 32%, transparent);
     --glow:color-mix(in srgb, var(--green) 45%, transparent);
-    --accent-soft:color-mix(in srgb, var(--accent) 20%, transparent);
-    --amber-soft:color-mix(in srgb, var(--amber) 20%, transparent);
     --hairline:color-mix(in srgb, var(--line) 55%, transparent);
     --hover-line:color-mix(in srgb, var(--line) 55%, var(--fg));
     --hd-bg:color-mix(in srgb, var(--bg) 92%, transparent);
@@ -36,17 +34,24 @@
     display:flex; flex-direction:column; min-height:100%;
   }
   button{font:inherit;color:inherit;background:none;border:0;cursor:pointer}
+
+  /* Ein Auswahlfeld muss aussehen wie eines. appearance:none nimmt den
+     System-Pfeil weg, also malen wir einen -- sonst liest es sich als
+     Textfeld und niemand kommt auf die Idee, es anzuklicken. */
   select{
-    font:inherit; color:inherit; background:var(--panel-2);
-    border:1px solid var(--line); border-radius:7px; padding:6px 8px; width:100%;
-    appearance:none; cursor:pointer;
+    font:inherit; color:inherit; background-color:var(--panel-2);
+    border:1px solid var(--line); border-radius:7px;
+    padding:6px 26px 6px 9px; width:100%; cursor:pointer; appearance:none;
+    background-image:url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='10' height='6'><path d='M1 1l4 4 4-4' fill='none' stroke='%23a0a8b4' stroke-width='1.6' stroke-linecap='round' stroke-linejoin='round'/></svg>");
+    background-repeat:no-repeat; background-position:right 9px center;
   }
-  select:focus{outline:1px solid var(--accent)}
+  select:hover{border-color:var(--hover-line)}
+  select:focus{outline:1px solid var(--accent);outline-offset:-1px}
   ::-webkit-scrollbar{width:9px;height:9px}
   ::-webkit-scrollbar-thumb{background:var(--line);border-radius:9px}
   ::-webkit-scrollbar-track{background:transparent}
 
-  /* ---------- header ---------- */
+  /* ---------- Kopf ---------- */
   header{
     position:sticky; top:0; z-index:5; background:var(--hd-bg);
     backdrop-filter:blur(8px); border-bottom:1px solid var(--line);
@@ -67,7 +72,6 @@
   .icon-btn:hover{color:var(--fg);border-color:var(--hover-line)}
 
   main{flex:1;padding:12px 14px 20px;display:flex;flex-direction:column;gap:14px}
-
   section{background:var(--panel);border:1px solid var(--line);border-radius:11px}
   .sec-head{
     display:flex;align-items:center;gap:8px;padding:9px 12px;
@@ -80,101 +84,211 @@
   .collapsed .chev{transform:rotate(-90deg)}
   .collapsed .sec-body{display:none}
 
-  /* ---------- picker ---------- */
+  /* ---------- Picker ---------- */
   .field{margin-bottom:8px}
   .field label{display:block;font-size:10px;text-transform:uppercase;letter-spacing:.6px;color:var(--faint);margin-bottom:4px}
   .row2{display:flex;gap:8px}
-  .row2>*{flex:1;min-width:0}
-
+  .row2>*{flex:0 1 210px;min-width:0}
   .shows{margin-top:10px;max-height:290px;overflow-y:auto;display:flex;flex-direction:column;gap:5px}
   .show{
     display:flex;align-items:center;gap:9px;padding:7px 9px;border-radius:8px;
     background:var(--panel-2);border:1px solid transparent;cursor:pointer;
   }
   .show:hover{border-color:var(--hover-line)}
-  .show .t{font-family:var(--mono);font-size:12px;color:var(--fg);flex:none;width:38px}
+  .show .t{font-family:var(--mono);font-size:12px;flex:none;width:38px}
   .show .n{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
   .show .meta{font-size:10px;color:var(--faint);margin-left:6px}
   .show.is-watched{opacity:.45;cursor:default}
   .show.is-watched:hover{border-color:transparent}
-  .pill{
-    font-family:var(--mono);font-size:10px;padding:2px 7px;border-radius:999px;flex:none;
-    border:1px solid transparent;
-  }
+  .pill{font-family:var(--mono);font-size:10px;padding:2px 7px;border-radius:999px;flex:none;border:1px solid transparent}
   .pill.sold_out{color:var(--red);background:var(--red-soft);border-color:var(--red-line)}
   .pill.available{color:var(--green);background:var(--green-soft);border-color:var(--green-line)}
   .pill.unknown,.pill.gone,.pill.closed,.pill.past{color:var(--faint);background:var(--hairline)}
-  .hint{font-size:10.5px;color:var(--faint);margin-top:5px;line-height:1.4}
-  .opt{display:flex;align-items:center;gap:7px;margin:0 0 10px;font-size:11.5px;color:var(--dim);cursor:pointer}
-  .opt input{accent-color:var(--green);cursor:pointer}
   .empty{color:var(--faint);font-size:12px;padding:14px 2px;text-align:center}
 
-  /* ---------- watch cards ---------- */
+  /* ---------- Karten ---------- */
   .cards{display:flex;flex-direction:column;gap:9px}
-  .card{
-    background:var(--panel-2);border:1px solid var(--line);border-radius:10px;
-    padding:10px 11px;position:relative;overflow:hidden;
-  }
-  .card.free{
-    border-color:var(--green);background:var(--green-soft);
-  }
+  .card{background:var(--panel-2);border:1px solid var(--line);border-radius:10px;padding:11px 12px}
+  .card.free{border-color:var(--green);background:var(--green-soft)}
   .card.free.alerting{animation:flash 1.4s ease-in-out infinite}
   @keyframes flash{0%,100%{box-shadow:0 0 0 0 transparent}50%{box-shadow:0 0 22px -2px var(--glow)}}
   .card.paused{opacity:.5}
-  .card-top{display:flex;align-items:flex-start;gap:8px}
-  .title{font-weight:600;font-size:14px;line-height:1.25;flex:1;min-width:0}
+
+  .title{font-weight:600;font-size:14px;line-height:1.25}
   .sub{color:var(--dim);font-size:11px;margin-top:2px}
-  .status-line{display:flex;align-items:center;gap:8px;margin-top:9px}
-  .status{font-family:var(--mono);font-size:17px;font-weight:600;letter-spacing:-.3px}
+
+  /* Status links gross, Nebeninfo rechts klein -- eine Zeile statt zwei. */
+  .status-line{display:flex;align-items:baseline;gap:10px;margin-top:9px}
+  .status{font-family:var(--mono);font-size:16px;font-weight:600;letter-spacing:-.3px}
   .status.sold_out{color:var(--red)}
   .status.available{color:var(--green)}
-  .status.unknown,.status.gone,.status.closed,.status.past{color:var(--faint);font-size:14px}
-  .checked{color:var(--faint);font-size:10px;font-family:var(--mono);margin-left:auto}
-  .lastfree{color:var(--faint);font-size:10px;font-family:var(--mono);text-align:right;margin-top:3px}
+  .status.unknown,.status.gone,.status.closed,.status.past{color:var(--faint);font-size:13px}
+  .lastfree{margin-left:auto;color:var(--faint);font-size:10px;font-family:var(--mono);text-align:right;white-space:nowrap}
   .lastfree b{color:var(--dim);font-weight:600}
 
-  .dots{display:flex;gap:2px;margin-top:9px;height:14px;align-items:flex-end}
-  .dots i{width:4px;border-radius:1px;background:var(--faint);opacity:.5}
-  .dots i.sold_out{background:var(--red);height:5px;opacity:.75}
-  .dots i.available{background:var(--green);height:14px;opacity:1}
-  .dots i.other{background:var(--faint);height:3px}
+  /* Ausverkauft-Striche flach und blass, freie Plaetze in voller Hoehe: so
+     liest sich der Streifen als "meist nichts, hier war was" statt als Linie. */
+  .dots{display:flex;gap:2px;height:12px;align-items:flex-end;margin-top:8px}
+  .dots i{width:4px;border-radius:1px;flex:none}
+  .dots i.sold_out{height:3px;background:var(--red);opacity:.45}
+  .dots i.available{height:12px;background:var(--green)}
+  .dots i.other{height:3px;background:var(--faint);opacity:.35}
 
-  /* Einstellung, keine Aktion: nur so breit wie noetig, und in einer eigenen
-     Farbfamilie je Stufe -- Gruen ist hier schon fuer "Platz frei" vergeben. */
-  .modes{display:inline-flex;border:1px solid var(--line);border-radius:6px;overflow:hidden;flex:none}
-  .seg{
-    padding:4px 8px;font-size:10px;color:var(--faint);background:transparent;
-    border-right:1px solid var(--line);white-space:nowrap;letter-spacing:.2px;
+  /* Einstellungen als Satz: die Optionstexte beschriften sich selbst, eine
+     Zeile Grossbuchstaben darueber waere doppelt gemoppelt. */
+  .opts{display:flex;align-items:center;gap:7px;margin-top:11px;flex-wrap:wrap}
+  /* Feste Breite mit Schrumpferlaubnis: "flex:1" liess die Felder mit dem
+     Fenster mitwachsen -- in einem breiten Fenster wurde daraus ein 800 Pixel
+     langes Dropdown fuer zwei Woerter. */
+  .opts .lead{color:var(--faint);font-size:11px;flex:none;min-width:46px}
+  .opts select{
+    flex:0 1 210px; min-width:0;
+    font-size:11.5px;padding:5px 24px 5px 8px;
+    background-color:var(--bg);background-position:right 8px center;
   }
-  .seg:last-child{border-right:0}
-  .seg:hover:not(.on):not(.na){color:var(--fg);background:var(--hairline)}
-  .seg.on{font-weight:600}
-  .seg.on[data-mode="off"]  {background:var(--hairline);   color:var(--dim)}
-  .seg.on[data-mode="open"] {background:var(--accent-soft);color:var(--accent)}
-  .seg.on[data-mode="auto"] {background:var(--amber-soft); color:var(--amber)}
-  .seg.na{opacity:.3;cursor:not-allowed}
+  .opts .ivsel{font-family:var(--mono);font-size:11px;color:var(--dim)}
+  /* Nur sichtbar, wenn wirklich automatisch gebucht wird -- sonst waere es
+     eine Einstellung ohne Wirkung. */
+  .ticketrow{margin-top:7px}
+  /* Farbe nach Konsequenz: grau passiv, blau handelt mit dir, bernstein
+     handelt allein. Gruen bleibt fuer "Platz frei" reserviert. */
+  .modesel[data-mode="open"]{border-color:var(--accent);color:var(--accent)}
+  .modesel[data-mode="auto"]{border-color:var(--amber);color:var(--amber);font-weight:600}
+
   .actions{display:flex;flex-wrap:wrap;gap:6px;margin-top:10px;align-items:center}
+  .actions .meta{color:var(--faint);font-size:10px;font-family:var(--mono);margin-right:auto}
   .btn{
     border:1px solid var(--line);border-radius:7px;padding:5px 10px;font-size:11px;
-    color:var(--dim);background:var(--panel);
-    display:inline-block;text-decoration:none;line-height:1.35;
+    color:var(--dim);background:var(--panel);display:inline-block;
+    text-decoration:none;line-height:1.35;
   }
   .btn:hover{color:var(--fg);border-color:var(--hover-line)}
-  .btn.primary{
-    background:var(--green);color:var(--on-green);border-color:var(--green);font-weight:600;
-    padding:6px 13px;font-size:12px;
-  }
+  .btn.primary{background:var(--green);color:var(--on-green);border-color:var(--green);font-weight:600;padding:6px 13px;font-size:12px}
   .btn.primary:hover{filter:brightness(1.08)}
   .btn.danger:hover{color:var(--red);border-color:var(--red-line)}
+  [hidden]{display:none !important}
 
-  /* ---------- log ---------- */
+  /* ---------- Log ---------- */
   .log{max-height:190px;overflow-y:auto;font-family:var(--mono);font-size:11px;display:flex;flex-direction:column-reverse}
   .log div{padding:2px 0;color:var(--dim);border-bottom:1px solid var(--hairline)}
   .log .ts{color:var(--faint);margin-right:7px}
   .log .hit{color:var(--green)}
   .log .warn,.log .error{color:var(--amber)}
 
-  footer{padding:0 14px 14px;color:var(--faint);font-size:10px;font-family:var(--mono);display:flex;gap:10px;flex-wrap:wrap}
+  /* ---------- Reiter ---------- */
+  .tabs{display:flex;gap:2px;background:var(--panel);border:1px solid var(--line);border-radius:8px;padding:2px;flex:none}
+  .tabs button{font-size:11px;padding:4px 11px;border-radius:6px;color:var(--faint);white-space:nowrap}
+  .tabs button:hover{color:var(--fg)}
+  .tabs button.on{background:var(--panel-2);color:var(--fg);box-shadow:inset 0 0 0 1px var(--hairline)}
+
+  /* ---------- Programm ----------
+     Zwei Spalten: links die Filme, rechts ihre Termine. Jede Spalte scrollt
+     fuer sich, damit die Liste beim Lesen der Termine stehen bleibt.
+
+     min-height:0 ist hier die ganze Miete: ein Flex-Element darf per Vorgabe
+     nicht unter seine Inhaltshoehe schrumpfen, also waere <main> so hoch wie
+     die Filmliste lang -- und dann scrollt die Seite als Ganzes statt der
+     Liste, und die Termine rechts sind weggescrollt, sobald man weiter unten
+     einen Film anklickt. Nur fuer diesen Reiter: der Monitor darf ruhig
+     seitenweise scrollen. */
+  #view-films{min-height:0}
+  .pgm{display:flex;gap:12px;flex:1;min-height:0}
+  .pgm-list,.pgm-detail{
+    background:var(--panel);border:1px solid var(--line);border-radius:11px;
+    display:flex;flex-direction:column;min-height:0;min-width:0;
+  }
+  .pgm-list{flex:0 0 318px}
+  .pgm-detail{flex:1}
+
+  .pgm-tools{padding:10px 11px 8px;border-bottom:1px solid var(--hairline);flex:none}
+  .pgm-tools input{
+    font:inherit;color:inherit;background:var(--panel-2);width:100%;
+    border:1px solid var(--line);border-radius:7px;padding:6px 9px;
+  }
+  .pgm-tools input:focus{outline:1px solid var(--accent);outline-offset:-1px}
+  .pgm-tools input::placeholder{color:var(--faint)}
+  .chips{display:flex;gap:6px;margin-top:7px;flex-wrap:wrap}
+  .chips select{flex:1 1 128px;width:auto;font-size:11px;padding:5px 22px 5px 8px;background-color:var(--bg);background-position:right 7px center}
+  .chip{
+    border:1px solid var(--line);border-radius:7px;padding:5px 9px;font-size:11px;
+    color:var(--dim);background:var(--bg);flex:none;
+  }
+  .chip:hover{border-color:var(--hover-line);color:var(--fg)}
+  .chip[data-on="1"]{border-color:var(--accent);color:var(--accent);background:color-mix(in srgb,var(--accent) 12%,transparent)}
+  .pgm-note{
+    display:flex;align-items:center;gap:8px;padding:6px 11px;flex:none;
+    color:var(--faint);font-size:10px;font-family:var(--mono);
+    border-bottom:1px solid var(--hairline);
+  }
+  .pgm-note .spacer{flex:1}
+
+  .pgm-rows{overflow-y:auto;flex:1;min-height:0;padding:6px}
+  .frow{
+    display:flex;gap:9px;align-items:center;padding:7px 8px;border-radius:8px;
+    cursor:pointer;border:1px solid transparent;
+  }
+  /* 16:9, weil die Bilder von Yorck Querformat sind -- ein Hochkant-Rahmen
+     wuerde sie beschneiden. Die Flaeche steht auch ohne Bild, sonst zappelt
+     die Liste beim Nachladen. */
+  .fthumb{
+    width:58px;height:33px;flex:none;border-radius:4px;object-fit:cover;
+    background:var(--panel-2);border:1px solid var(--hairline);
+  }
+  .frow:hover{background:var(--panel-2)}
+  .frow.on{background:var(--panel-2);border-color:var(--hover-line)}
+  /* Wie oft der Film ueberhaupt laeuft, ist hier die eigentliche Nachricht --
+     darum steht die Zahl vorn und nicht als Nebensatz hinten. */
+  .fcount{
+    font-family:var(--mono);font-size:10px;color:var(--faint);flex:none;
+    width:26px;text-align:right;
+  }
+  .fcount.rare{color:var(--amber);font-weight:600}
+  /* Blau, nicht bernstein: "selten" und "neu" stehen oft am selben Film und
+     muessen auf einen Blick auseinandergehen. */
+  .tag-new{
+    font-family:var(--mono);font-size:9px;letter-spacing:.4px;text-transform:uppercase;
+    color:var(--accent);background:color-mix(in srgb,var(--accent) 14%,transparent);
+    border:1px solid color-mix(in srgb,var(--accent) 32%,transparent);
+    border-radius:999px;padding:1px 5px;margin-left:6px;vertical-align:1px;
+  }
+  .fbody{min-width:0;flex:1}
+  .fn{display:block;font-size:12.5px;line-height:1.3}
+  .fm{display:block;color:var(--faint);font-size:10.5px;margin-top:1px;
+      overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+
+  .fd{overflow-y:auto;flex:1;min-height:0;padding:12px 13px}
+  .fd-hero{
+    width:100%;max-height:200px;object-fit:cover;display:block;
+    border-radius:9px;border:1px solid var(--hairline);margin-bottom:11px;
+  }
+  .fd-title{font-weight:600;font-size:15px;line-height:1.25}
+  .fd-meta{color:var(--dim);font-size:11px;margin-top:3px}
+  .fd-links{display:flex;gap:6px;margin-top:9px;align-items:center;flex-wrap:wrap}
+  .fd-day{margin-top:13px}
+  .fd-date{
+    font-size:10px;text-transform:uppercase;letter-spacing:.7px;color:var(--faint);
+    padding-bottom:4px;border-bottom:1px solid var(--hairline);
+  }
+  .fd-show{display:flex;align-items:center;gap:9px;padding:7px 2px;flex-wrap:wrap}
+  .fd-show .t{font-family:var(--mono);font-size:12px;flex:none;width:38px}
+  .fd-show .n{flex:1;min-width:90px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .fd-show .meta{font-size:10px;color:var(--faint);margin-left:6px}
+  .fd-show .btn{padding:3px 8px;font-size:10.5px}
+  .fd-show.is-watched{opacity:.5}
+  .backbtn{display:none}
+
+  /* Schmales Fenster -- und der --app-Modus ist immer schmal: dann eine Spalte,
+     und ein Film schiebt seine Termine ueber die Liste statt daneben. */
+  @media (max-width:720px){
+    .pgm{flex-direction:column;gap:0}
+    .pgm-list{flex:1 1 auto}
+    .pgm-detail{flex:1 1 auto}
+    .pgm.open .pgm-list{display:none}
+    .pgm:not(.open) .pgm-detail{display:none}
+    .backbtn{display:inline-block}
+  }
+
+  footer{padding:0 14px 14px;color:var(--faint);font-size:10px;font-family:var(--mono)}
   .toast{
     position:fixed;left:14px;right:14px;bottom:14px;
     background:color-mix(in srgb, var(--red) 12%, var(--panel));
@@ -193,14 +307,16 @@
     <div class="head-sub" id="head-sub">starting…</div>
   </div>
   <span class="spacer"></span>
-  <button class="icon-btn" id="check-now" title="Check right now">check now</button>
+  <div class="tabs">
+    <button data-tab="monitor" class="on">Monitor</button>
+    <button data-tab="films">Programme</button>
+  </div>
+  <button class="icon-btn" id="check-now">check now</button>
 </header>
 
-<main>
+<main id="view-monitor">
   <section id="sec-add">
-    <div class="sec-head" data-toggle="sec-add">
-      <span class="chev">▾</span> Add a screening
-    </div>
+    <div class="sec-head" data-toggle="sec-add"><span class="chev">▾</span> Add a screening</div>
     <div class="sec-body">
       <div class="row2">
         <div class="field">
@@ -220,78 +336,104 @@
     <div class="sec-head" data-toggle="sec-watch">
       <span class="chev">▾</span> Watching <span class="count" id="watch-count"></span>
     </div>
-    <div class="sec-body">
-      <div class="cards" id="cards"><div class="empty">Nothing watched yet.</div></div>
-    </div>
+    <div class="sec-body"><div class="cards" id="cards"></div></div>
   </section>
 
   <section id="sec-log">
     <div class="sec-head" data-toggle="sec-log">
       <span class="chev">▾</span> Activity
-      <span class="spacer"></span>
-      <span class="count" id="net-count"></span>
+      <span class="spacer"></span><span class="count" id="net-count"></span>
     </div>
-    <div class="sec-body">
-      <div class="field" style="margin-bottom:10px">
-        <label for="interval">Check every</label>
-        <select id="interval">
-          <option value="60">60 seconds</option>
-          <option value="90">90 seconds</option>
-          <option value="120">2 minutes</option>
-          <option value="300">5 minutes</option>
-          <option value="600">10 minutes</option>
-        </select>
-      </div>
-      <div class="log" id="log"></div>
-    </div>
+    <div class="sec-body"><div class="log" id="log"></div></div>
   </section>
 </main>
 
-<footer>
-  <span id="foot-net"></span>
-  <span class="spacer"></span>
-  <span>read-only · never books</span>
-</footer>
+<main id="view-films" hidden>
+  <div class="pgm" id="pgm">
+    <div class="pgm-list">
+      <div class="pgm-tools">
+        <input id="f-search" type="search" placeholder="Search films…" autocomplete="off">
+        <div class="chips">
+          <button class="chip" id="f-rare" data-on="0" title="Films with at most three screenings">rare only</button>
+          <button class="chip" id="f-new" data-on="0" title="Films added since the previous refresh, for a week">new only</button>
+          <select id="f-cinema" aria-label="Cinema"><option value="">all cinemas</option></select>
+          <select id="f-when" aria-label="How far ahead">
+            <option value="0">all dates</option>
+            <option value="7">next 7 days</option>
+            <option value="30">next 30 days</option>
+          </select>
+          <select id="f-sort" aria-label="Sort by">
+            <option value="rare">rarest first</option>
+            <option value="next">next screening</option>
+            <option value="title">A – Z</option>
+          </select>
+        </div>
+      </div>
+      <div class="pgm-note">
+        <span id="f-count">–</span><span class="spacer"></span>
+        <span id="f-built"></span>
+        <button class="chip" id="f-refresh">refresh</button>
+      </div>
+      <div class="pgm-rows" id="f-rows"><div class="empty">loading…</div></div>
+    </div>
+    <div class="pgm-detail"><div class="fd" id="f-detail"><div class="empty">Pick a film.</div></div></div>
+  </div>
+</main>
 
+<footer><span id="foot"></span></footer>
 <div class="toast" id="toast"></div>
 
 <script>
 const $ = s => document.querySelector(s);
-const MODE_LABEL = { off: 'melden', open: 'öffnen', auto: 'auto' };
-const MODE_TIP = {
-  off:  'Ton, Desktop-Meldung und Handy-Push. Sonst nichts.',
-  open: 'Öffnet den Checkout in deinem Chrome. Ticketart und Bestätigung machst du.',
-  auto: 'Wählt „Yorck Unlimited“ und schließt die Buchung ab.',
-};
-let STATE = null, PROG = null, alerting = false, audioCtx = null;
+let STATE = null, alerting = false, audioCtx = null, alertTimer = null;
 
-/* ---------- helpers ---------- */
+const MODE_OPTIONS = [
+  ['off',  'Notify only'],
+  ['open', 'Open checkout'],
+  ['auto', 'Book automatically'],
+];
+/* Values must read exactly as the checkout prints the row label -- the script
+   finds the row by its visible text. Which rows exist depends on the cinema
+   and on the account, so this is the union of what we have seen. */
+const TICKET_OPTIONS = [
+  ['Yorck Unlimited', 'Yorck Unlimited — free'],
+  ['Mitglieder Ticket', 'Mitglieder Ticket — 1 € off'],
+  ['Begleitticket (Unlimited 10%)', 'Begleitticket — 10 % off'],
+  ['Normal (Online)', 'Normal (Online) — full price'],
+];
+const IV_OPTIONS = [
+  [5, 'every 5s'], [8, 'every 8s'], [10, 'every 10s'],
+  [15, 'every 15s'], [20, 'every 20s'], [30, 'every 30s'], [45, 'every 45s'],
+  [60, 'every 60s'], [90, 'every 90s'], [120, 'every 120s'],
+  [300, 'every 5 min'], [600, 'every 10 min'],
+];
+
+/* ---------- Helfer ---------- */
 const pad = n => String(n).padStart(2, '0');
-const clock = ts => { const d = new Date(ts * 1000); return pad(d.getHours()) + ':' + pad(d.getMinutes()) + ':' + pad(d.getSeconds()); };
-const ago = ts => { if (!ts) return '–'; const s = Math.max(0, Math.round(Date.now() / 1000 - ts)); return s < 60 ? s + 's ago' : Math.round(s / 60) + 'm ago'; };
+const hhmm = ts => { const d = new Date(ts * 1000); return pad(d.getHours()) + ':' + pad(d.getMinutes()); };
+const clock = ts => hhmm(ts) + ':' + pad(new Date(ts * 1000).getSeconds());
+const ago = ts => { if (!ts) return '–'; const s = Math.max(0, Math.round(Date.now() / 1000 - ts));
+                    return s < 60 ? `${s}s ago` : `${Math.round(s / 60)}m ago`; };
 const esc = s => String(s ?? '').replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
 
 const STATUS_TEXT = {
-  available: n => (n === 1 ? '1 seat free' : n + ' seats free'),
+  available: n => (n === 1 ? '1 SEAT FREE' : `${n} SEATS FREE`),
   sold_out: () => 'SOLD OUT',
   closed: () => 'sales closed',
-  gone: () => 'not listed',
+  gone: () => 'no longer listed',
   past: () => 'screening over',
   unknown: () => 'no data yet',
 };
 const statusText = (s, n) => (STATUS_TEXT[s] || (() => 'waiting…'))(n);
 
-/* Wann zuletzt ein Platz online war. Heute nur die Uhrzeit, sonst mit Datum --
-   die Jahreszahl hilft hier niemandem und kostet nur Breite. */
 function lastFree(w) {
-  if (w.status === 'available') return 'frei · <b>jetzt</b>';
-  if (!w.last_free_at) return 'noch kein Platz gesehen';
-  const d = new Date(w.last_free_at * 1000), now = new Date();
-  const t = pad(d.getHours()) + ':' + pad(d.getMinutes());
-  const sameDay = d.toDateString() === now.toDateString();
-  const when = sameDay ? t : `${pad(d.getDate())}.${pad(d.getMonth() + 1)}. ${t}`;
-  const n = w.last_free_seats;
-  return `zuletzt frei · <b>${when}</b>` + (n ? ` · ${n} ${n === 1 ? 'Platz' : 'Plätze'}` : '');
+  if (w.status === 'available') return 'free · <b>now</b>';
+  if (!w.last_free_at) return 'no seat seen yet';
+  const d = new Date(w.last_free_at * 1000);
+  const sameDay = d.toDateString() === new Date().toDateString();
+  const when = sameDay ? hhmm(w.last_free_at)
+                       : `${pad(d.getDate())}.${pad(d.getMonth() + 1)}. ${hhmm(w.last_free_at)}`;
+  return `last free · <b>${when}</b>`;
 }
 
 function toast(msg) {
@@ -303,7 +445,11 @@ function toast(msg) {
 async function api(path, opts) {
   const r = await fetch(path, opts);
   const data = await r.json().catch(() => ({}));
-  if (!r.ok) throw new Error(data.error || ('HTTP ' + r.status));
+  if (!r.ok) {
+    const err = new Error(data.error || ('HTTP ' + r.status));
+    err.status = r.status;
+    throw err;
+  }
   return data;
 }
 const post = (path, body) => api(path, {
@@ -311,7 +457,7 @@ const post = (path, body) => api(path, {
   body: JSON.stringify(body || {}),
 });
 
-/* ---------- alerting: sound + notification + title ---------- */
+/* ---------- Alarm ---------- */
 function beep() {
   if (!STATE?.settings?.sound) return;
   try {
@@ -326,116 +472,186 @@ function beep() {
       o.connect(g); g.connect(audioCtx.destination);
       o.start(audioCtx.currentTime + t); o.stop(audioCtx.currentTime + t + 0.18);
     });
-  } catch (e) { /* audio blocked until first click; fine */ }
+  } catch (e) { /* bis zum ersten Klick stummgeschaltet */ }
 }
 
-let alertTimer = null;
 function setAlerting(on, watches) {
   if (on === alerting) return;
   alerting = on;
   clearInterval(alertTimer); alertTimer = null;
-  if (on) {
-    beep();
-    alertTimer = setInterval(beep, 8000);
-    document.title = '🎟 TICKETS FREE — Yorck Monitor';
-    const w = watches[0];
-    if (w && typeof Notification !== 'undefined' && Notification.permission === 'granted') {
-      new Notification('Tickets free: ' + w.film_title,
-        { body: w.cinema_name + ' · ' + w.date_label + ' · ' + statusText(w.status, w.seats), tag: w.id });
-    }
-  } else {
-    document.title = 'Yorck Monitor';
+  if (!on) { document.title = 'Yorck Monitor'; return; }
+  beep();
+  alertTimer = setInterval(beep, 8000);
+  document.title = '🎟 SEAT FREE — Yorck Monitor';
+  const w = watches[0];
+  if (w && typeof Notification !== 'undefined' && Notification.permission === 'granted') {
+    new Notification('Seat free: ' + w.film_title,
+      { body: `${w.cinema_name} · ${w.date_label} · ${statusText(w.status, w.seats)}`, tag: w.id });
   }
 }
 
-/* ---------- header ---------- */
+/* ---------- Karten: einmal bauen, danach nur auffrischen ----------
+   Frueher setzte diese Funktion jede Sekunde innerHTML neu. Das wirft jedes
+   Auswahlfeld weg, das der Nutzer gerade geoeffnet hat -- die Dropdowns
+   liessen sich schlicht nicht bedienen. Jetzt bleibt das Geruest stehen und
+   es aendern sich nur einzelne Knoten. */
+const cardEls = new Map();
+let cardOrder = '';
+
+function buildCard(w) {
+  const el = document.createElement('div');
+  el.dataset.id = w.id;
+  el.innerHTML = `
+    <div class="title"></div>
+    <div class="sub"></div>
+    <div class="status-line"><span class="status"></span><span class="lastfree"></span></div>
+    <div class="dots"></div>
+    <div class="opts">
+      <span class="lead">If free</span>
+      <select class="modesel" data-id="${w.id}" aria-label="When a seat frees up">
+        ${MODE_OPTIONS.map(([v, t]) => {
+          const na = v === 'auto' && w.allocated;
+          return `<option value="${v}"${na ? ' disabled' : ''}>${t}${na ? ' (not possible here)' : ''}</option>`;
+        }).join('')}
+      </select>
+      <select class="ivsel" data-id="${w.id}" aria-label="Check interval">
+        ${IV_OPTIONS.map(([v, t]) => `<option value="${v}">${t}</option>`).join('')}
+      </select>
+    </div>
+    <div class="opts ticketrow">
+      <span class="lead">Ticket</span>
+      <select class="ticketsel" data-id="${w.id}" aria-label="Which ticket to book">
+        ${TICKET_OPTIONS.map(([v, t]) => `<option value="${esc(v)}">${t}</option>`).join('')}
+      </select>
+    </div>
+    <div class="actions">
+      <span class="meta"></span>
+      <a class="btn primary book" target="_blank" rel="noopener" data-ack="${w.id}">Book now →</a>
+      <button class="btn quiet" data-act="ack" data-id="${w.id}">quiet</button>
+      <a class="btn page" target="_blank" rel="noopener">page</a>
+      <button class="btn pausebtn" data-id="${w.id}"></button>
+      <button class="btn danger" data-act="remove" data-id="${w.id}">remove</button>
+    </div>`;
+  return el;
+}
+
+const setHTML = (el, html) => { if (el.innerHTML !== html) el.innerHTML = html; };
+
+function updateCard(el, w) {
+  const st = w.status || 'unknown';
+  const free = st === 'available';
+
+  const cls = 'card' + (free ? ' free' : '') + (w.alert ? ' alerting' : '') + (w.active ? '' : ' paused');
+  if (el.className !== cls) el.className = cls;
+
+  setHTML(el.querySelector('.title'), esc(w.film_title));
+  setHTML(el.querySelector('.sub'),
+    `${esc(w.cinema_name)} · ${esc(w.date_label)}${w.formats?.length ? ' · ' + esc(w.formats.join('/')) : ''}`);
+
+  const s = el.querySelector('.status');
+  if (s.className !== 'status ' + st) s.className = 'status ' + st;
+  setHTML(s, statusText(st, w.seats));
+  setHTML(el.querySelector('.lastfree'), lastFree(w));
+
+  setHTML(el.querySelector('.dots'), (w.history || []).slice(-40).map(h =>
+    `<i class="${h.s === 'available' ? 'available' : h.s === 'sold_out' ? 'sold_out' : 'other'}" title="${clock(h.t)} · ${statusText(h.s, h.n)}"></i>`
+  ).join(''));
+
+  /* Werte nie setzen, waehrend das Feld benutzt wird. */
+  const mode = el.querySelector('.modesel');
+  if (document.activeElement !== mode) {
+    mode.value = w.checkout_mode || 'open';
+    mode.dataset.mode = mode.value;
+  }
+  const iv = el.querySelector('.ivsel');
+  if (document.activeElement !== iv) iv.value = String(w.interval || 60);
+
+  const trow = el.querySelector('.ticketrow');
+  const auto = (w.checkout_mode || 'open') === 'auto' && !w.allocated;
+  if (trow.hidden !== !auto) trow.hidden = !auto;
+  const tsel = el.querySelector('.ticketsel');
+  if (document.activeElement !== tsel) tsel.value = w.ticket_type || 'Yorck Unlimited';
+
+  setHTML(el.querySelector('.meta'), `${w.checks || 0} checks · ${ago(w.last_checked)}`);
+
+  const book = el.querySelector('.book');
+  book.hidden = !free;
+  if (free && book.getAttribute('href') !== w.booking_url) book.href = w.booking_url;
+  el.querySelector('.quiet').hidden = !w.alert;
+  const page = el.querySelector('.page');
+  if (page.getAttribute('href') !== w.listing_url) page.href = w.listing_url;
+  const pb = el.querySelector('.pausebtn');
+  const label = w.active ? 'pause' : 'resume';
+  if (pb.textContent !== label) { pb.textContent = label; pb.dataset.act = w.active ? 'pause' : 'resume'; }
+}
+
+function renderCards(s) {
+  const box = $('#cards');
+  $('#watch-count').textContent = s.watches.length ? `(${s.watches.length})` : '';
+
+  if (!s.watches.length) {
+    if (!box.querySelector('.empty')) box.innerHTML = '<div class="empty">Nothing watched yet.</div>';
+    cardEls.clear(); cardOrder = '';
+    return;
+  }
+  const ph = box.querySelector('.empty');
+  if (ph) ph.remove();
+
+  const rank = { available: 0, sold_out: 1, unknown: 2, closed: 3, gone: 4, past: 5 };
+  const list = [...s.watches].sort((a, b) =>
+    (rank[a.status] ?? 2) - (rank[b.status] ?? 2) || a.start.localeCompare(b.start));
+
+  for (const w of list) {
+    let el = cardEls.get(w.id);
+    if (!el) { el = buildCard(w); cardEls.set(w.id, el); box.appendChild(el); }
+    updateCard(el, w);
+  }
+  for (const [id, el] of [...cardEls]) {
+    if (!list.some(w => w.id === id)) { el.remove(); cardEls.delete(id); }
+  }
+  /* Umsortieren nur wenn noetig, und nie waehrend ein Feld benutzt wird. */
+  const order = list.map(w => w.id).join(',');
+  if (order !== cardOrder && !box.contains(document.activeElement)) {
+    list.forEach(w => box.appendChild(cardEls.get(w.id)));
+    cardOrder = order;
+  }
+
+  const hits = list.filter(w => w.alert && w.status === 'available');
+  setAlerting(hits.length > 0, hits);
+}
+
+/* ---------- Kopf, Log, Fuss ---------- */
 function renderHead(s) {
   const p = s.poller, dot = $('#dot');
   let cls = 'dot', sub;
   if (p.backoff_until && p.backoff_until > s.now) {
     cls += ' warn';
-    sub = 'paused ' + Math.ceil((p.backoff_until - s.now) / 60) + ' min (rate limited)';
+    sub = `paused for ${Math.ceil((p.backoff_until - s.now) / 60)} min (rate limited)`;
   } else if (p.checking) {
     cls += ' busy'; sub = 'checking…';
   } else if (s.watches.some(w => w.active && w.status !== 'past')) {
     cls += ' live';
     const left = p.next_check ? Math.max(0, Math.round(p.next_check - s.now)) : null;
-    sub = left === null ? 'watching' : 'next check in ' + left + 's';
+    sub = left === null ? 'watching' : `next check in ${left}s`;
   } else {
     sub = 'idle · nothing watched';
   }
   dot.className = cls;
   $('#head-sub').textContent = sub;
-  $('#net-count').textContent = s.net.requests + ' requests';
+  $('#net-count').textContent = `${s.net.requests} requests`;
+
   const push = [s.push?.ntfy && 'phone', s.push?.telegram && 'telegram'].filter(Boolean);
-  $('#foot-net').textContent =
-    s.net.requests + ' requests · ' + (s.net.bytes / 1024 / 1024).toFixed(1) + ' MB · ' +
-    s.net.errors + ' errors · last check ' + ago(p.last_check) +
-    ' · push: ' + (push.length ? push.join('+') : 'desktop only');
+  $('#foot').textContent =
+    `${s.net.requests} requests · ${(s.net.bytes / 1024 / 1024).toFixed(1)} MB · ` +
+    `${s.net.errors} errors · push: ${push.length ? push.join('+') : 'desktop only'}`;
 }
 
-/* ---------- watch cards ---------- */
-function renderCards(s) {
-  const box = $('#cards');
-  $('#watch-count').textContent = s.watches.length ? '(' + s.watches.length + ')' : '';
-  if (!s.watches.length) {
-    box.innerHTML = '<div class="empty">Nothing watched yet.</div>';
-    return;
-  }
-  const order = { available: 0, sold_out: 1, unknown: 2, closed: 3, gone: 4, past: 5 };
-  const list = [...s.watches].sort((a, b) =>
-    (order[a.status] ?? 2) - (order[b.status] ?? 2) || a.start.localeCompare(b.start));
-
-  box.innerHTML = list.map(w => {
-    const st = w.status || 'unknown';
-    const free = st === 'available';
-    const dots = (w.history || []).slice(-40).map(h =>
-      `<i class="${h.s === 'available' ? 'available' : h.s === 'sold_out' ? 'sold_out' : 'other'}" title="${clock(h.t)} · ${statusText(h.s, h.n)}"></i>`).join('');
-    return `
-    <div class="card ${free ? 'free' : ''} ${w.alert ? 'alerting' : ''} ${w.active ? '' : 'paused'}">
-      <div class="card-top">
-        <div class="title">${esc(w.film_title)}
-          <div class="sub">${esc(w.cinema_name)} · ${esc(w.date_label)}${w.formats?.length ? ' · ' + esc(w.formats.join('/')) : ''}</div>
-        </div>
-      </div>
-      <div class="status-line">
-        <span class="status ${st}">${statusText(st, w.seats)}</span>
-        <span class="checked">${w.checks || 0} checks · ${ago(w.last_checked)}</span>
-      </div>
-      <div class="lastfree">${lastFree(w)}</div>
-      <div class="dots">${dots}</div>
-      <div class="actions">
-        <div class="modes" role="group" aria-label="Wenn ein Platz frei wird">
-          ${['off', 'open', 'auto'].map(m => {
-            const na = m === 'auto' && w.allocated;
-            return `<button class="seg ${(w.checkout_mode || 'open') === m ? 'on' : ''} ${na ? 'na' : ''}"
-                      data-mode="${m}" data-id="${w.id}" ${na ? 'disabled' : ''}
-                      title="${esc(MODE_TIP[m] + (na ? ' — hier nicht möglich: Kino mit Sitzplatzwahl' : ''))}"
-                    >${MODE_LABEL[m]}</button>`;
-          }).join('')}
-        </div>
-        ${free ? `<a class="btn primary" href="${esc(w.booking_url)}" target="_blank" rel="noopener"
-                     data-ack="${w.id}">Book now →</a>` : ''}
-        ${w.alert ? `<button class="btn" data-act="ack" data-id="${w.id}">quiet</button>` : ''}
-        <a class="btn" href="${esc(w.listing_url)}" target="_blank" rel="noopener">page</a>
-        <span class="spacer" style="flex:1"></span>
-        <button class="btn" data-act="${w.active ? 'pause' : 'resume'}" data-id="${w.id}">${w.active ? 'pause' : 'resume'}</button>
-        <button class="btn danger" data-act="remove" data-id="${w.id}">remove</button>
-      </div>
-    </div>`;
-  }).join('');
-
-  const free = list.filter(w => w.alert && w.status === 'available');
-  setAlerting(free.length > 0, free);
-}
-
-/* ---------- log ---------- */
 function renderLog(s) {
   $('#log').innerHTML = s.log.slice(-120).map(e =>
     `<div><span class="ts">${clock(e.t)}</span><span class="${e.level}">${esc(e.text)}</span></div>`).join('');
 }
 
-/* ---------- picker ---------- */
+/* ---------- Picker ---------- */
 async function loadCinemas() {
   try {
     const { cinemas } = await api('/api/cinemas');
@@ -448,20 +664,19 @@ async function loadCinemas() {
 }
 
 async function loadDates() {
-  const slug = $('#cinema').value;
-  const dsel = $('#date');
+  const slug = $('#cinema').value, dsel = $('#date');
   if (!slug) { dsel.innerHTML = '<option>–</option>'; $('#shows').innerHTML = '<div class="empty">Pick a cinema.</div>'; return; }
   localStorage.setItem('cinema', slug);
   dsel.innerHTML = '<option>loading…</option>';
   $('#shows').innerHTML = '<div class="empty">loading programme…</div>';
   try {
-    PROG = await api('/api/programme?cinema=' + encodeURIComponent(slug));
+    const prog = await api('/api/programme?cinema=' + encodeURIComponent(slug));
     const today = new Date().toISOString().slice(0, 10);
-    const dates = PROG.dates.filter(d => d >= today);
+    const dates = prog.dates.filter(d => d >= today);
     if (!dates.length) { dsel.innerHTML = '<option>–</option>'; $('#shows').innerHTML = '<div class="empty">No upcoming screenings.</div>'; return; }
     dsel.innerHTML = dates.map(d => {
       const dt = new Date(d + 'T12:00');
-      const name = d === today ? 'Today' : dt.toLocaleDateString(undefined, { weekday: 'short' });
+      const name = d === today ? 'Today' : dt.toLocaleDateString('en-GB', { weekday: 'short' });
       return `<option value="${d}">${name} ${d.slice(8, 10)}.${d.slice(5, 7)}.</option>`;
     }).join('');
     loadShows();
@@ -479,33 +694,269 @@ async function loadShows() {
     const d = await api(`/api/showtimes?cinema=${encodeURIComponent(slug)}&date=${date}`);
     if (!d.showtimes.length) { $('#shows').innerHTML = '<div class="empty">Nothing on this day.</div>'; return; }
     $('#shows').innerHTML = d.showtimes.map(r => `
-      <div class="show ${r.watched ? 'is-watched' : ''}"
-           data-session="${esc(r.session_id)}" data-alloc="${r.allocated ? 1 : 0}">
+      <div class="show ${r.watched ? 'is-watched' : ''}" data-session="${esc(r.session_id)}" data-alloc="${r.allocated ? 1 : 0}">
         <span class="t">${esc(r.time)}</span>
         <span class="n">${esc(r.film_title)}${r.formats?.length ? `<span class="meta">${esc(r.formats.join('/'))}</span>` : ''}</span>
-        <span class="pill ${r.status}">${r.watched ? 'watching' : r.status === 'available' ? r.seats + ' free' : r.status === 'sold_out' ? 'sold out' : '?'}</span>
+        <span class="pill ${r.status}">${r.watched ? 'watching'
+          : r.status === 'available' ? `${r.seats} frei`
+          : r.status === 'sold_out' ? 'sold out' : '?'}</span>
       </div>`).join('');
   } catch (e) {
     $('#shows').innerHTML = `<div class="empty">${esc(e.message)}</div>`;
   }
 }
 
-/* ---------- events ---------- */
+/* ---------- Programm: das Angebot filmweise statt kinoweise ----------
+   Die Seite von Yorck ist nach Kinos sortiert; eine einmalige Wiederauffuehrung
+   in drei Wochen findet man dort nur, wenn man fuenfzehn Haeuser und dreissig
+   Tage durchklickt. Hier steht der Film vorn und seine Termine daneben --
+   und die Sortierung "am seltensten zuerst" macht genau die Vorstellungen
+   sichtbar, die sonst untergehen. */
+let FILMS = null, filmKey = null, filmsPoll = null, filmsOnce = false;
+
+const SHOW_TEXT = {
+  available: n => (n === 1 ? '1 free' : `${n} free`),
+  sold_out: () => 'sold out',
+  closed: () => 'sales closed',
+  gone: () => 'not on sale',
+  unknown: () => '–',
+};
+const showText = (s, n) => (SHOW_TEXT[s] || SHOW_TEXT.unknown)(n);
+
+/* Contentful skaliert selbst -- ein Listenbild sind so 0,8 KB statt 286.
+   Ohne das laedt die Seite 109 Originale zu je einem Viertel Megabyte. */
+const shot = (url, w) => url
+  ? `${url}?w=${w}&h=${Math.round(w * 9 / 16)}&fit=fill&fm=webp&q=72` : '';
+
+const bookLink = s =>
+  `https://www.yorck.de/en/checkout/${s.allocated ? 'seats' : 'tickets'}` +
+  `?sessionid=${encodeURIComponent(s.composite_id)}`;
+
+/* Nicht toISOString(): das rechnet nach UTC um und liefert vor 2 Uhr morgens
+   noch den Vortag -- ausgerechnet zur Kinozeit. */
+const ymd = d => `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+const today = () => ymd(new Date());
+const inDays = n => { const d = new Date(); d.setDate(d.getDate() + n); return ymd(d); };
+
+function dayLabel(d) {
+  if (d === today()) return 'Today';
+  return new Date(d + 'T12:00').toLocaleDateString('en-GB',
+    { weekday: 'short', day: 'numeric', month: 'short' });
+}
+
+async function loadFilms(force) {
+  try {
+    const d = await api('/api/films' + (force ? '?refresh=1' : ''));
+    FILMS = d;
+    fillCinemaFilter();
+    renderFilms();
+    clearTimeout(filmsPoll);
+    /* Waehrend der Crawl laeuft fuellt sich die Liste Kino fuer Kino. */
+    if (d.building) filmsPoll = setTimeout(() => loadFilms(false), 2500);
+  } catch (e) {
+    $('#f-count').textContent = '';
+    $('#f-rows').innerHTML = `<div class="empty">${esc(e.status === 404
+      ? 'This server was started before the Programme tab existed. '
+        + 'Restart yorck_monitor.py and reload.'
+      : e.message)}</div>`;
+  }
+}
+
+function fillCinemaFilter() {
+  const sel = $('#f-cinema'), names = new Map();
+  for (const f of FILMS.films) for (const s of f.screenings) names.set(s.cinema_slug, s.cinema_name);
+  const opts = [...names].sort((a, b) => a[1].localeCompare(b[1]));
+  const sig = opts.map(o => o[0]).join(',');
+  if (sel.dataset.sig === sig) return;      // sonst faellt die Auswahl beim Tippen zurueck
+  const keep = sel.value;
+  sel.dataset.sig = sig;
+  sel.innerHTML = '<option value="">all cinemas</option>' +
+    opts.map(([slug, name]) => `<option value="${esc(slug)}">${esc(name)}</option>`).join('');
+  if (keep && names.has(keep)) sel.value = keep;
+}
+
+function visibleFilms() {
+  if (!FILMS) return [];
+  const q = $('#f-search').value.trim().toLowerCase();
+  const cin = $('#f-cinema').value;
+  const days = +$('#f-when').value;
+  const rare = $('#f-rare').dataset.on === '1';
+  const onlyNew = $('#f-new').dataset.on === '1';
+  const until = days ? inDays(days) : '9999-99-99';
+  const sort = $('#f-sort').value;
+
+  const out = [];
+  for (const f of FILMS.films) {
+    if (onlyNew && !f.new) continue;
+    if (q && !f.title.toLowerCase().includes(q) && !(f.genre || '').toLowerCase().includes(q)) continue;
+    const sc = f.screenings.filter(s => (!cin || s.cinema_slug === cin) && s.date <= until);
+    if (!sc.length) continue;
+    if (rare && sc.length > 3) continue;
+    out.push({ f, sc });
+  }
+  out.sort((a, b) =>
+      sort === 'title' ? a.f.title.localeCompare(b.f.title)
+    : sort === 'next' ? a.sc[0].start.localeCompare(b.sc[0].start) || a.f.title.localeCompare(b.f.title)
+    : (a.sc.length - b.sc.length) || a.sc[0].start.localeCompare(b.sc[0].start));
+  return out;
+}
+
+function renderFilms() {
+  if (!FILMS) return;
+  const list = visibleFilms(), total = FILMS.films.length;
+
+  const fresh = FILMS.films.filter(f => f.new).length;
+  $('#f-count').textContent = FILMS.building
+    ? `reading ${FILMS.done}/${FILMS.total || '?'} cinemas · ${total} films`
+    : `${list.length}${list.length === total ? '' : ' of ' + total} films`
+      + (fresh ? ` · ${fresh} new` : '');
+  $('#f-built').textContent = FILMS.built ? 'from ' + hhmm(FILMS.built) : '';
+
+  const rows = $('#f-rows');
+  if (!list.length) {
+    rows.innerHTML = `<div class="empty">${esc(
+      FILMS.building ? 'reading the programme…' : FILMS.error || 'Nothing matches.')}</div>`;
+  } else {
+    rows.innerHTML = list.map(({ f, sc }) => {
+      const houses = new Set(sc.map(s => s.cinema_slug));
+      const meta = [
+        f.genre,
+        f.runtime ? f.runtime + ' min' : null,
+        houses.size === 1 ? sc[0].cinema_name : houses.size + ' cinemas',
+        dayLabel(sc[0].date),
+      ].filter(Boolean).join(' · ');
+      return `<div class="frow${f.key === filmKey ? ' on' : ''}" data-film="${esc(f.key)}">
+        <span class="fcount${sc.length <= 3 ? ' rare' : ''}">${sc.length}&times;</span>
+        <img class="fthumb" loading="lazy" alt="" src="${esc(shot(f.image, 174))}">
+        <span class="fbody"><span class="fn">${esc(f.title)}${
+          f.new ? '<span class="tag-new">new</span>' : ''}</span><span class="fm">${esc(meta)}</span></span>
+      </div>`;
+    }).join('');
+  }
+  renderFilmDetail();
+}
+
+function renderFilmDetail() {
+  const box = $('#f-detail');
+  const f = FILMS && FILMS.films.find(x => x.key === filmKey);
+  if (!f) { box.innerHTML = '<div class="empty">Pick a film.</div>'; return; }
+
+  const watched = new Set(FILMS.watched || []);
+  const houses = new Set(f.screenings.map(s => s.cinema_slug));
+  const n = f.screenings.length;
+  const meta = [
+    f.genre,
+    f.runtime ? f.runtime + ' min' : null,
+    f.fsk != null ? 'FSK ' + f.fsk : null,
+    `${n} screening${n === 1 ? '' : 's'} at ${houses.size} cinema${houses.size === 1 ? '' : 's'}`,
+  ].filter(Boolean).join(' · ');
+
+  /* Pro Termin genau eine Taste, und welche, entscheidet der Zustand: ist noch
+     etwas frei, kauft man einfach -- der Monitor meldet ja das Frei*werden* und
+     wuerde bei einem freien Platz sofort ausloesen (im Modus "open" also
+     ungefragt die Kasse aufmachen). Nur was gerade nicht zu haben ist, lohnt
+     das Beobachten. */
+
+  /* Termine sind schon nach Anfangszeit sortiert -- also einfach durchlaufen
+     und bei jedem Datumswechsel eine neue Ueberschrift setzen. */
+  const days = [];
+  for (const s of f.screenings) {
+    const last = days[days.length - 1];
+    if (!last || last.date !== s.date) days.push({ date: s.date, shows: [s] });
+    else last.shows.push(s);
+  }
+
+  box.scrollTop = 0;
+  box.innerHTML = `
+    <button class="btn backbtn" id="f-back">← all films</button>
+    ${f.image ? `<img class="fd-hero" alt="" src="${esc(shot(f.image, 900))}">` : ''}
+    <div class="fd-title">${esc(f.title)}${f.new ? '<span class="tag-new">new</span>' : ''}</div>
+    <div class="fd-meta">${esc(meta)}</div>
+    <div class="fd-links">
+      <a class="btn" target="_blank" rel="noopener"
+         href="https://www.yorck.de/en/films/${encodeURIComponent(f.slug)}">on yorck.de →</a>
+    </div>
+    ${days.map(d => `
+      <div class="fd-day">
+        <div class="fd-date">${esc(dayLabel(d.date))}</div>
+        ${d.shows.map(s => {
+          const w = watched.has(s.session_id);
+          return `<div class="fd-show${w ? ' is-watched' : ''}">
+            <span class="t">${esc(s.time)}</span>
+            <span class="n">${esc(s.cinema_name)}${s.formats?.length
+              ? `<span class="meta">${esc(s.formats.join('/'))}</span>` : ''}</span>
+            <span class="pill ${esc(s.status)}">${esc(showText(s.status, s.seats))}</span>
+            ${s.status === 'available'
+              ? `<a class="btn" target="_blank" rel="noopener" href="${esc(bookLink(s))}">book</a>`
+              : w ? '<span class="meta">watching</span>'
+              : `<button class="btn" data-watch="${esc(s.session_id)}"
+                   data-cinema="${esc(s.cinema_slug)}" data-alloc="${s.allocated ? 1 : 0}">watch</button>`}
+          </div>`;
+        }).join('')}
+      </div>`).join('')}`;
+}
+
+function setTab(t) {
+  const films = t === 'films';
+  $('#view-monitor').hidden = films;
+  $('#view-films').hidden = !films;
+  $('#check-now').hidden = films;
+  document.querySelectorAll('.tabs button').forEach(b => b.classList.toggle('on', b.dataset.tab === t));
+  localStorage.setItem('tab', t);
+  history.replaceState(null, '', '#' + t);   // damit sich ein Fenster verlinken laesst
+  /* Der Crawl kostet gut dreissig Anfragen, also erst wenn jemand hinsieht. */
+  if (films && !filmsOnce) { filmsOnce = true; loadFilms(false); }
+}
+
+/* ---------- Ereignisse: Programm ---------- */
 document.addEventListener('click', async ev => {
-  // Browsers keep audio muted until the page has been clicked once.
+  const tab = ev.target.closest('.tabs button');
+  if (tab) return setTab(tab.dataset.tab);
+
+  if (ev.target.closest('#f-refresh')) return loadFilms(true);
+  if (ev.target.closest('#f-back')) return $('#pgm').classList.remove('open');
+
+  const chip = ev.target.closest('#f-rare, #f-new');
+  if (chip) { chip.dataset.on = chip.dataset.on === '1' ? '0' : '1'; return renderFilms(); }
+
+  const row = ev.target.closest('.frow');
+  if (row) {
+    filmKey = row.dataset.film;
+    $('#pgm').classList.add('open');       // im schmalen Fenster: Termine statt Liste
+    document.querySelectorAll('.frow.on').forEach(r => r.classList.remove('on'));
+    row.classList.add('on');
+    return renderFilmDetail();
+  }
+
+  const w = ev.target.closest('[data-watch]');
+  if (w) {
+    w.disabled = true;
+    try {
+      await post('/api/watch', { cinema: w.dataset.cinema, session_id: w.dataset.watch,
+                                 allocated: w.dataset.alloc === '1' });
+      await refresh();
+      await loadFilms(false);              // nur der Cache, kostet nichts nach aussen
+      if (typeof Notification !== 'undefined' && Notification.permission === 'default')
+        Notification.requestPermission();
+      toast('Watching. It is on the Monitor tab now.');
+    } catch (e) { toast(e.message); w.disabled = false; }
+  }
+});
+
+document.addEventListener('input', ev => { if (ev.target.id === 'f-search') renderFilms(); });
+document.addEventListener('change', ev => {
+  if (['f-cinema', 'f-when', 'f-sort'].includes(ev.target.id)) renderFilms();
+});
+
+/* ---------- Ereignisse ---------- */
+document.addEventListener('click', async ev => {
   if (!audioCtx) { try { audioCtx = new (window.AudioContext || window.webkitAudioContext)(); } catch (e) {} }
+
   const tog = ev.target.closest('[data-toggle]');
   if (tog) { $('#' + tog.dataset.toggle).classList.toggle('collapsed'); return; }
 
-  const ack = ev.target.closest('[data-ack]');
-  if (ack) { post(`/api/watch/${ack.dataset.ack}/ack`).then(refresh); return; }
-
-  const seg = ev.target.closest('.seg');
-  if (seg && !seg.disabled) {
-    try { await post(`/api/watch/${seg.dataset.id}/mode`, { mode: seg.dataset.mode }); await refresh(); }
-    catch (e) { toast(e.message); }
-    return;
-  }
+  const book = ev.target.closest('.book');
+  if (book) { post(`/api/watch/${book.dataset.ack}/ack`).then(refresh); return; }
 
   const act = ev.target.closest('[data-act]');
   if (act) {
@@ -518,42 +969,53 @@ document.addEventListener('click', async ev => {
   if (show && !show.classList.contains('is-watched')) {
     show.classList.add('is-watched');
     try {
-      await post('/api/watch', {
-        cinema: $('#cinema').value,
-        session_id: show.dataset.session,
-        allocated: show.dataset.alloc === '1',
-      });
-      await refresh();
-      loadShows();
+      await post('/api/watch', { cinema: $('#cinema').value, session_id: show.dataset.session,
+                                 allocated: show.dataset.alloc === '1' });
+      await refresh(); loadShows();
       if (typeof Notification !== 'undefined' && Notification.permission === 'default')
         Notification.requestPermission();
     } catch (e) { toast(e.message); show.classList.remove('is-watched'); }
   }
 });
 
-$('#cinema').addEventListener('change', loadDates);
-$('#date').addEventListener('change', loadShows);
-$('#check-now').addEventListener('click', () => post('/api/check-now').then(() => setTimeout(refresh, 400)));
-$('#interval').addEventListener('change', e =>
-  post('/api/settings', { interval: +e.target.value }).catch(err => toast(err.message)));
+document.addEventListener('change', async ev => {
+  const el = ev.target;
+  if (el.id === 'cinema') return loadDates();
+  if (el.id === 'date') return loadShows();
+  const isMode = el.classList.contains('modesel');
+  const isIv = el.classList.contains('ivsel');
+  const isTicket = el.classList.contains('ticketsel');
+  if (!isMode && !isIv && !isTicket) return;
+  if (isMode) el.dataset.mode = el.value;
+  const path = isMode ? 'mode' : isIv ? 'interval' : 'ticket';
+  const body = isMode ? { mode: el.value }
+             : isIv ? { interval: +el.value }
+             : { ticket: el.value };
+  try {
+    await post(`/api/watch/${el.dataset.id}/${path}`, body);
+    await refresh();
+  } catch (e) { toast(e.message); await refresh(); }
+});
 
-/* ---------- loop ---------- */
+$('#check-now').addEventListener('click', () => post('/api/check-now').then(() => setTimeout(refresh, 400)));
+
+/* ---------- Schleife ---------- */
 async function refresh() {
   try {
     STATE = await api('/api/state');
     renderHead(STATE); renderCards(STATE); renderLog(STATE);
-    const iv = $('#interval');
-    if (document.activeElement !== iv) iv.value = String(STATE.settings.interval);
   } catch (e) {
     $('#head-sub').textContent = 'server not reachable';
     $('#dot').className = 'dot warn';
   }
 }
 
-/* Local ticks are free — they only hit our own process, never yorck.de. */
+/* Lokale Ticks kosten nichts -- sie treffen nur den eigenen Prozess. */
 setInterval(refresh, 1000);
 refresh();
 loadCinemas();
+setTab((location.hash.slice(1) || localStorage.getItem('tab')) === 'films'
+       ? 'films' : 'monitor');
 </script>
 </body>
 </html>
