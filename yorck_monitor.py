@@ -45,17 +45,41 @@ import yorck_api as api
 HERE = os.path.dirname(os.path.abspath(__file__))
 STATE_DIR = os.path.expanduser("~/.yorck_monitor")
 STATE_FILE = os.path.join(STATE_DIR, "state.json")
+LOG_FILE = os.path.join(STATE_DIR, "log.jsonl")
+FILMS_FILE = os.path.join(STATE_DIR, "catalogue.json")
+LOG_KEEP_SECONDS = 24 * 3600
 
-DEFAULT_INTERVAL = 90
-MIN_INTERVAL = 60
+DEFAULT_INTERVAL = 60
+MIN_INTERVAL = 5
+INTERVAL_CHOICES = (5, 8, 10, 15, 20, 30, 45, 60, 90, 120, 300, 600)
 MAX_INTERVAL = 900
-MIN_CYCLE_GAP = 15    # floor between two check cycles, however often the UI pokes us
+MIN_CYCLE_GAP = 3     # floor between two check cycles, however often the UI pokes us
 
 MAX_LOG = 400        # global feed entries kept in memory
 MAX_HISTORY = 60     # per-watch check dots kept
 
 CATALOGUE_TTL = 30 * 60   # programme pages are static; re-read at most every 30 min
 CINEMAS_TTL = 6 * 60 * 60
+FILMS_TTL = 30 * 60       # how long a full crawl of every cinema stays good
+NEW_FOR = 7 * 24 * 3600   # how long a film that just appeared keeps its badge
+FORGET_AFTER = 90 * 24 * 3600   # ...and how long we remember one that left
+
+
+# ---------------------------------------------------------------------------
+# kleine Helfer -- weit oben, weil Store.load() sie beim Import schon braucht
+# ---------------------------------------------------------------------------
+
+WEEKDAYS = ("Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun")
+
+
+def date_label(start: datetime) -> str:
+    """"Thu 27.08. 20:45" -- spelled out rather than strftime('%a'), which
+    follows the system locale and silently changes language on you."""
+    return f"{WEEKDAYS[start.weekday()]} {start:%d.%m. %H:%M}"
+
+
+def _parse_start(s: str) -> datetime:
+    return datetime.strptime(s[:16], "%Y-%m-%dT%H:%M")
 
 
 # ---------------------------------------------------------------------------
@@ -69,7 +93,7 @@ class Store:
         self.lock = threading.RLock()
         self.watches: list[dict] = []
         self.log: list[dict] = []
-        self.settings = {"interval": DEFAULT_INTERVAL, "sound": True, "desktop": True}
+        self.settings = {"sound": True, "desktop": True}
         self.poller = {
             "running": False,
             "next_check": None,
@@ -80,6 +104,7 @@ class Store:
         }
         self._seq = 0
         self.load()
+        self.load_log()
 
     # -- persistence -------------------------------------------------------
 
@@ -95,10 +120,18 @@ class Store:
             # Reste frueherer Fassungen: der Modus sitzt jetzt an der Watch.
             self.settings.pop("auto_open", None)
             self.settings.pop("checkout_mode", None)
+            legacy_iv = self.settings.pop("interval", None)
+            if legacy_iv:                      # global -> an jede Watch, einmalig
+                for x in self.watches:
+                    x.setdefault("interval", max(MIN_INTERVAL, min(MAX_INTERVAL, int(legacy_iv))))
             for w in self.watches:
                 w.setdefault("history", [])
                 w.setdefault("alert", False)
                 w.setdefault("checks", 0)
+                try:                       # Wochentag ggf. auf Deutsch nachziehen
+                    w["date_label"] = date_label(_parse_start(w["start"]))
+                except (ValueError, KeyError):
+                    pass               # nur kaputte Datumsfelder, nichts anderes
                 if not w.get("last_free_at"):
                     # Nachtragen fuer Beobachtungen von vor dieser Fassung.
                     # Die Historie haelt nur 60 Eintraege (bei 60 s also eine
@@ -128,11 +161,47 @@ class Store:
             self._seq += 1
             return f"w{int(time.time())}{self._seq}"
 
+    def load_log(self):
+        """
+        Bring back the last 24 h of log lines and drop everything older.
+
+        Kept as JSON Lines and rewritten on start: it makes "how long was that
+        seat actually available" answerable after the fact, which it was not
+        while the log lived only in memory and died with every restart.
+        """
+        cutoff = time.time() - LOG_KEEP_SECONDS
+        kept = []
+        try:
+            with open(LOG_FILE) as f:
+                for line in f:
+                    try:
+                        e = json.loads(line)
+                    except ValueError:
+                        continue
+                    if e.get("t", 0) >= cutoff:
+                        kept.append(e)
+        except FileNotFoundError:
+            return
+        os.makedirs(STATE_DIR, exist_ok=True)
+        tmp = LOG_FILE + ".tmp"
+        with open(tmp, "w") as f:
+            for e in kept:
+                f.write(json.dumps(e) + "\n")
+        os.replace(tmp, LOG_FILE)
+        with self.lock:
+            self.log = kept[-MAX_LOG:]
+
     def add_log(self, level: str, text: str, watch_id: str | None = None):
         entry = {"t": time.time(), "level": level, "text": text, "watch": watch_id}
         with self.lock:
             self.log.append(entry)
             del self.log[:-MAX_LOG]
+        try:
+            os.makedirs(STATE_DIR, exist_ok=True)
+            with open(LOG_FILE, "a") as f:
+                f.write(json.dumps(entry) + "\n")
+        except Exception:
+            pass          # Logging darf den Watcher nie stoppen
         stamp = datetime.now().strftime("%H:%M:%S")
         mark = {"hit": ">>>", "warn": " ! ", "error": " ! "}.get(level, "   ")
         print(f"[{stamp}]{mark}{text}", flush=True)
@@ -179,10 +248,12 @@ class Catalogue:
             self._cinemas = (time.time(), data)
         return data
 
-    def programme(self, slug: str) -> dict:
+    def programme(self, slug: str, force: bool = False) -> dict:
+        """`force` skips the cache -- otherwise a refresh inside the TTL would
+        re-read seat counts but never notice a film that was just added."""
         with self.lock:
             hit = self._programmes.get(slug)
-            if hit and time.time() - hit[0] < CATALOGUE_TTL:
+            if hit and not force and time.time() - hit[0] < CATALOGUE_TTL:
                 return hit[1]
         data = api.fetch_programme(slug)
         with self.lock:
@@ -191,6 +262,300 @@ class Catalogue:
 
 
 catalogue = Catalogue()
+
+
+# ---------------------------------------------------------------------------
+# film index -- the whole programme, seen film-first instead of cinema-first
+# ---------------------------------------------------------------------------
+
+def _publish(films: dict) -> list[dict]:
+    """A private copy of the index, safe to hand to the HTTP threads.
+
+    The crawl keeps appending to the film dicts while a request may be
+    serialising them, so every snapshot gets fresh outer objects. The screening
+    dicts themselves are never touched again after they are created, so those
+    can be shared.
+    """
+    out = []
+    for f in films.values():
+        g = dict(f)
+        g["screenings"] = sorted(f["screenings"], key=lambda s: s["start"])
+        out.append(g)
+    out.sort(key=lambda f: f["title"].lower())
+    return out
+
+
+def _mark_new(out: list[dict], seen: dict, seeding: bool,
+              now: float, prev_built: float | None) -> None:
+    """Flag the films that were not in the programme the last time we looked.
+
+    The badge is anchored to a stored timestamp, not to a diff against the
+    previous crawl -- a diff would clear itself on the very next refresh, and
+    "what came in this week" is the question worth answering.
+
+    Absence is measured against the previous crawl, never against the clock.
+    Measuring against the clock conflated "this film was away" with "nobody
+    opened the tab for a fortnight", so a gap in *looking* lit up the entire
+    programme as new.
+
+    On the very first crawl nothing is new: there is no baseline to be new
+    against, and flagging all 123 films would say nothing at all.
+    """
+    for f in out:
+        rec = seen.get(f["key"])
+        if seeding:
+            first = 0.0                      # "was here before we started counting"
+        elif rec is None:
+            first = now                      # never seen before
+        elif prev_built and rec.get("last", 0.0) < prev_built - 0.5:
+            first = now                      # missing from the last crawl, back now
+        else:
+            first = rec.get("first", 0.0)
+        f["first_seen"] = first
+        f["new"] = bool(first) and (now - first) < NEW_FOR
+
+
+class FilmIndex:
+    """
+    Every film Yorck currently has on sale anywhere, with all of its dates.
+
+    The programme pages are cinema-first: to find the one 35 mm repertory
+    screening three weeks out you would have to open fifteen cinemas and click
+    through every day. This turns the same data inside out -- one crawl of all
+    cinemas, merged by film slug (stable across houses; vistaId is not, it is
+    empty for series and festival entries).
+
+    Cost is one programme page plus one seat lookup per cinema, so about thirty
+    small requests for the lot, and a single seat lookup covers a cinema's
+    entire horizon -- months of presale in one response. That is too much to
+    put on a timer next to a running watch, so it only ever runs when someone
+    actually opens the tab, and then holds for FILMS_TTL.
+    """
+
+    def __init__(self):
+        self.lock = threading.Lock()
+        self.films: list[dict] = []
+        self.built: float | None = None    # end of the last complete crawl
+        self.building = False
+        self.done = 0
+        self.total = 0
+        self.error: str | None = None
+        self.seen: dict[str, dict] = {}    # film key -> {first, last} seen
+        self._load()
+
+    # -- persistence -------------------------------------------------------
+
+    def _load(self):
+        """Last crawl from disk, so a restart is not a cold minute of waiting."""
+        try:
+            with open(FILMS_FILE) as f:
+                d = json.load(f)
+            if isinstance(d, dict) and isinstance(d.get("films"), list):
+                self.films = d["films"]
+                self.built = d.get("built")
+                self.seen = d.get("seen") or {}
+                if not self.seen and self.built:
+                    # An index from before this was tracked is still a perfectly
+                    # good baseline -- read it as "all of these were already
+                    # here", so the very next crawl can say what has arrived
+                    # since, instead of throwing that away and starting blank.
+                    self.seen = {f["key"]: {"first": 0.0, "last": self.built}
+                                 for f in self.films if f.get("key")}
+        except Exception:
+            pass
+
+    def _persist(self):
+        try:
+            os.makedirs(STATE_DIR, exist_ok=True)
+            tmp = FILMS_FILE + ".tmp"
+            with open(tmp, "w") as f:
+                json.dump({"built": self.built, "films": self.films,
+                           "seen": self.seen}, f)
+            os.replace(tmp, FILMS_FILE)
+        except Exception as e:
+            store.add_log("warn", f"could not save the film index: {e}")
+
+    # -- reading -----------------------------------------------------------
+
+    def snapshot(self, force: bool = False) -> dict:
+        """What the UI gets: whatever we have, plus whether it is being redone.
+
+        Stale data is served immediately and refreshed behind it -- a minute of
+        blank screen would be a worse answer than a programme from an hour ago.
+        """
+        with self.lock:
+            stale = self.built is None or time.time() - self.built > FILMS_TTL
+            out = {
+                "films": self.films,
+                "built": self.built,
+                "building": self.building,
+                "done": self.done,
+                "total": self.total,
+                "stale": stale,
+                "error": self.error,
+            }
+        if force or stale:
+            if self.start(force=force):
+                out["building"] = True
+        with store.lock:
+            out["watched"] = sorted({w["session_id"] for w in store.watches})
+        return out
+
+    # -- crawling ----------------------------------------------------------
+
+    def start(self, force: bool = False) -> bool:
+        with self.lock:
+            if self.building:
+                return False
+            self.building = True
+            self.done, self.total, self.error = 0, 0, None
+        threading.Thread(target=self._build, args=(force,),
+                         name="film-index", daemon=True).start()
+        return True
+
+    def _build(self, force: bool = False):
+        started = time.time()
+        seeding = not self.seen          # first ever crawl: nothing to be new against
+        prev_built = self.built
+        complete = True
+        try:
+            cinemas = catalogue.cinemas()
+            with self.lock:
+                self.total = len(cinemas)
+            films: dict[str, dict] = {}
+            for c in cinemas:
+                try:
+                    self._one_cinema(c, films, force)
+                except api.RateLimited:
+                    raise
+                except Exception as e:
+                    complete = False
+                    store.add_log("warn", f"programme: {c['slug']} skipped ({e})")
+                with self.lock:
+                    self.done += 1
+                    # On a cold start let the list fill cinema by cinema --
+                    # something to read beats a spinner. On a refresh there is
+                    # already a full list on screen, and replacing it with a
+                    # growing stub would wipe it for a minute; keep it and swap
+                    # once the new one is complete.
+                    if not self.built:
+                        out = _publish(films)
+                        _mark_new(out, self.seen, seeding, started, prev_built)
+                        self.films = out
+
+            now = time.time()
+            out = _publish(films)
+            _mark_new(out, self.seen, seeding, now, prev_built)
+            self._remember(out, now, complete)
+            with self.lock:
+                self.built = now
+                self.films = out
+            self._persist()
+            shows = sum(len(f["screenings"]) for f in films.values())
+            fresh = sum(1 for f in out if f["new"])
+            store.add_log("info", f"programme: {len(films)} films, {shows} screenings, "
+                                  f"{len(cinemas)} cinemas, {fresh} new "
+                                  f"({time.time() - started:.0f}s)")
+        except api.RateLimited as e:
+            with self.lock:
+                self.error = f"yorck.de is rate limiting us: {e}"
+            store.add_log("warn", f"programme crawl stopped: {e}")
+        except Exception as e:
+            with self.lock:
+                self.error = f"{type(e).__name__}: {e}"
+            store.add_log("error", f"programme crawl failed: {e}")
+        finally:
+            with self.lock:
+                self.building = False
+
+    def _remember(self, out: list[dict], now: float, complete: bool) -> None:
+        """Move the baseline: everything present now, plus what recently left.
+
+        `complete` is false when a cinema was skipped -- rate limited, or a bad
+        response. Its films are missing from this crawl through no fault of
+        their own, so nothing counts as departed and the whole programme would
+        otherwise come back flagged as new on the next run.
+        """
+        seen = {f["key"]: {"first": f["first_seen"], "last": now} for f in out}
+        for key, rec in self.seen.items():
+            if key in seen:
+                continue
+            if not complete:
+                seen[key] = {"first": rec.get("first", 0.0), "last": now}
+            elif now - rec.get("last", 0.0) < FORGET_AFTER:
+                seen[key] = rec
+        self.seen = seen
+
+    def _one_cinema(self, cinema: dict, films: dict, force: bool = False):
+        prog = catalogue.programme(cinema["slug"], force=force)
+        now = datetime.now().strftime("%Y-%m-%dT%H:%M")
+
+        # Contentful lists some screenings twice -- once plainly and once as a
+        # "Preview: ..." special. Same rule the picker uses: one row per session
+        # id, the plainest title wins.
+        pick: dict[str, tuple[dict, dict]] = {}
+        for film in prog["films"]:
+            for s in film["sessions"]:
+                if s["start"] < now:
+                    continue
+                old = pick.get(s["session_id"])
+                if old and len(old[0]["title"]) <= len(film["title"]):
+                    continue
+                pick[s["session_id"]] = (film, s)
+        if not pick:
+            return
+
+        # One lookup for the cinema's whole horizon -- months of presale come
+        # back in a single response, so a longer range costs nothing extra.
+        dates = sorted({s["date"] for _, s in pick.values()})
+        end = (datetime.strptime(dates[-1], "%Y-%m-%d") + timedelta(days=1)).strftime("%Y-%m-%d")
+        try:
+            avail = api.fetch_availability(cinema["vista_id"], dates[0], end)
+        except api.RateLimited:
+            raise
+        except Exception as e:
+            store.add_log("warn", f"seat lookup failed for {cinema['slug']}: {e}")
+            avail = {}
+
+        for sid, (film, s) in pick.items():
+            info = avail.get(sid)
+            status, seats = _classify(info)
+            key = film["slug"] or film["title"].strip().lower()
+            f = films.get(key)
+            if f is None:
+                f = films[key] = {
+                    "key": key,
+                    "slug": film["slug"],
+                    "title": film["title"].strip(),
+                    "image": film.get("image") or "",
+                    "genre": film["label"] or "",
+                    "runtime": film["runtime"],
+                    "fsk": film["fsk"],
+                    "screenings": [],
+                }
+            else:
+                if len(film["title"].strip()) < len(f["title"]):
+                    f["title"] = film["title"].strip()
+                # A film runs at several cinemas; take a picture from whichever
+                # entry actually carries one.
+                if not f["image"] and film.get("image"):
+                    f["image"] = film["image"]
+            f["screenings"].append({
+                "cinema_slug": cinema["slug"],
+                "cinema_name": cinema["name"],
+                "session_id": sid,
+                "composite_id": s["id"],
+                "date": s["date"],
+                "time": s["time"],
+                "start": s["start"],
+                "formats": s["formats"],
+                "status": status,
+                "seats": seats,
+                "allocated": bool(info.get("allocated")) if info else False,
+            })
+
+
+film_index = FilmIndex()
 
 
 # ---------------------------------------------------------------------------
@@ -234,6 +599,18 @@ def ntfy_topic() -> str | None:
 
 CHECKOUT_MODES = ("off", "open", "auto")
 
+# Which row the auto-checkout clicks. Matched against the visible label on the
+# page, so these must read exactly as the checkout prints them. UNLIMITED is
+# good for one seat per screening -- a second ticket (for someone else) needs
+# one of the paid rows.
+TICKET_CHOICES = (
+    "Yorck Unlimited",                 # 0,00 EUR, once per screening
+    "Mitglieder Ticket",               # members' online discount, 1 EUR off
+    "Begleitticket (Unlimited 10%)",   # for companions of an Unlimited holder
+    "Normal (Online)",                 # full price, no membership needed
+)
+DEFAULT_TICKET = "Yorck Unlimited"
+
 
 # Was eine frisch angelegte Beobachtung bekommt. Bewusst eine Konstante und
 # keine Einstellung: eine globale Vorgabe, die nur NEUE Watches betrifft, sieht
@@ -244,6 +621,20 @@ DEFAULT_CHECKOUT_MODE = "open"
 
 def default_mode() -> str:
     return DEFAULT_CHECKOUT_MODE
+
+
+def watch_interval(w: dict) -> int:
+    """Wie oft diese eine Vorstellung geprueft wird, in Sekunden."""
+    try:
+        v = int(w.get("interval") or DEFAULT_INTERVAL)
+    except (TypeError, ValueError):
+        v = DEFAULT_INTERVAL
+    return max(MIN_INTERVAL, min(MAX_INTERVAL, v))
+
+
+def watch_ticket(w: dict) -> str:
+    t = w.get("ticket_type")
+    return t if t in TICKET_CHOICES else DEFAULT_TICKET
 
 
 def watch_mode(w: dict) -> str:
@@ -258,7 +649,11 @@ def watch_mode(w: dict) -> str:
     return m if m in CHECKOUT_MODES else default_mode()
 
 
-MAX_CHECKOUT_ATTEMPTS = 3
+# One attempt per freed seat. Retrying reloaded the checkout three times in
+# half a minute, and the failures that actually occur -- a ticket type the site
+# refuses -- do not get better by trying again. The counter resets when the
+# seat disappears, so a genuinely new opportunity still gets a fresh attempt.
+MAX_CHECKOUT_ATTEMPTS = 1
 
 
 def grab_seat(w: dict) -> None:
@@ -306,8 +701,8 @@ def grab_seat(w: dict) -> None:
         n = w.get("checkout_attempts", 0)
 
     if mode == "auto" and w.get("allocated"):
-        store.add_log("warn", f"{w['film_title']}: Vollautomatik nur ohne Sitzplatzwahl "
-                              f"-- Checkout wird nur geoeffnet", w["id"])
+        store.add_log("warn", f"{w['film_title']}: auto-booking needs free seating "
+                              f"-- only opening the checkout", w["id"])
 
     def run():
         try:
@@ -317,34 +712,51 @@ def grab_seat(w: dict) -> None:
                 subprocess.Popen(["osascript", "-e",
                                   'tell application "Google Chrome" to activate'],
                                  stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-                store.add_log("hit", f"Checkout geoeffnet (Ticket noch selbst waehlen): "
+                store.add_log("hit", f"Checkout opened (pick the ticket yourself): "
                                      f"{w['film_title']}", w["id"])
                 return
 
-            store.add_log("hit", f"Auto-Checkout Versuch {n}/{MAX_CHECKOUT_ATTEMPTS}: "
-                                 f"{w['film_title']}", w["id"])
-            checkout_drive.book(w["composite_id"], w["start"],
-                                log=lambda m: store.add_log("info", m, w["id"]))
+            store.add_log("hit", f"Auto-checkout attempt {n}/{MAX_CHECKOUT_ATTEMPTS}: "
+                                 f"{w['film_title']} ({watch_ticket(w)})", w["id"])
+            res = checkout_drive.book(w["composite_id"], w["start"],
+                                      ticket=watch_ticket(w),
+                                      log=lambda m: store.add_log("info", m, w["id"]))
+
+            if res.get("reserved"):
+                # Signed out: the ticket sits in the basket and the seat is held
+                # for the order session. Not booked -- the human has to finish.
+                with store.lock:
+                    w["reserved_at"] = time.time()
+                store.add_log("hit", f"IN BASKET (signed out): {w['film_title']} - "
+                                     f"{res.get('ticket')} -- sign in and finish, "
+                                     f"the checkout tab is open", w["id"])
+                notify_ntfy(f"Seat held: {w['film_title']}",
+                            f"You are signed out. {res.get('ticket')} is in the basket "
+                            f"-- finish within ~10 min.", click=w["booking_url"])
+                notify_desktop("Yorck Monitor - seat in basket",
+                               f"{w['film_title']}\nSigned out -- finish the checkout")
+                return
+
             with store.lock:
                 w["booked"] = time.time()
-            store.add_log("hit", f"GEBUCHT: {w['film_title']} - {w['date_label']}", w["id"])
-            notify_ntfy(f"Gebucht: {w['film_title']}",
-                        f"{w['cinema_name']} - {w['date_label']} - mit Unlimited",
+            store.add_log("hit", f"BOOKED: {w['film_title']} - {w['date_label']}", w["id"])
+            notify_ntfy(f"Booked: {w['film_title']}",
+                        f"{w['cinema_name']} - {w['date_label']} - {watch_ticket(w)}",
                         click=w["listing_url"])
-            notify_desktop("Yorck Monitor - gebucht", f"{w['film_title']}\n{w['date_label']}")
+            notify_desktop("Yorck Monitor - booked", f"{w['film_title']}\n{w['date_label']}")
 
         except Exception as e:
             reason = f"{type(e).__name__}: {e}"
             if n < MAX_CHECKOUT_ATTEMPTS:
-                store.add_log("error", f"Auto-Checkout Versuch {n} fehlgeschlagen ({reason}) "
-                                       f"-- neuer Versuch beim naechsten Check", w["id"])
+                store.add_log("error", f"Auto-checkout attempt {n} failed ({reason}) "
+                                       f"-- retrying on the next check", w["id"])
             else:
-                store.add_log("error", f"Auto-Checkout endgueltig gescheitert nach {n} "
-                                       f"Versuchen ({reason}) -- bitte selbst buchen", w["id"])
-                notify_ntfy(f"Auto-Checkout gescheitert: {w['film_title']}",
-                            f"{reason[:120]} -- bitte selbst buchen",
+                store.add_log("error", f"Auto-checkout gave up after {n} attempts "
+                                       f"({reason}) -- book it yourself", w["id"])
+                notify_ntfy(f"Auto-checkout failed: {w['film_title']}",
+                            f"{reason[:120]} -- book it yourself",
                             click=w["booking_url"])
-                notify_desktop("Yorck Monitor - Auto-Checkout gescheitert",
+                notify_desktop("Yorck Monitor - auto-checkout failed",
                                f"{w['film_title']}\n{reason[:100]}")
         finally:
             with store.lock:
@@ -404,10 +816,6 @@ def notify_telegram(text: str):
 # the watcher
 # ---------------------------------------------------------------------------
 
-def _parse_start(s: str) -> datetime:
-    return datetime.strptime(s[:16], "%Y-%m-%dT%H:%M")
-
-
 def _classify(info: dict | None) -> tuple[str, int | None]:
     """Map a raw availability record onto a status the UI can show."""
     if info is None:
@@ -430,6 +838,8 @@ class Watcher(threading.Thread):
         self.wake = threading.Event()
         self.stop_flag = threading.Event()
         self.fails = 0
+        self.due: dict[str, float] = {}   # cinema_id -> naechster Faelligkeitszeitpunkt
+        self.capped = None                # zuletzt gemeldete Drossel-Warnung
 
     # -- main loop ---------------------------------------------------------
 
@@ -444,9 +854,14 @@ class Watcher(threading.Thread):
         store.poller["running"] = False
 
     def cycle(self) -> float:
-        interval = max(MIN_INTERVAL, min(MAX_INTERVAL,
-                                         int(store.settings.get("interval", DEFAULT_INTERVAL))))
+        """
+        Check the cinemas that are due, then sleep until the next one is.
 
+        Each watch carries its own interval, and a cinema is polled at the
+        shortest interval any of its watches asks for -- one request covers all
+        of them anyway, so a slow watch costs nothing extra when it shares a
+        cinema with a fast one.
+        """
         # Adding a watch or changing a setting wakes the loop early. Keep a
         # floor between cycles so a burst of UI clicks cannot turn into a burst
         # of requests.
@@ -465,27 +880,63 @@ class Watcher(threading.Thread):
             with store.lock:
                 store.poller["message"] = "no active watches"
                 store.poller["checking"] = False
+            self.due.clear()
             return 5.0
 
+        now = time.time()
+        rates = {cid: min(watch_interval(w) for w in ws) for cid, ws in groups.items()}
+        for cid in list(self.due):
+            if cid not in groups:
+                del self.due[cid]                    # Kino nicht mehr beobachtet
+        # Ein schon gesetzter Termin darf nie weiter weg liegen als das aktuell
+        # gewuenschte Intervall. Sonst bleibt ein Kino, das eben noch auf 10
+        # Minuten stand, nach dem Umschalten auf 5 Sekunden minutenlang geparkt
+        # -- also genau dann, wenn man die Frequenz gerade hochgedreht hat.
+        for cid, rate in rates.items():
+            if cid in self.due:
+                self.due[cid] = min(self.due[cid], now + rate)
+
+        due_now = [cid for cid in groups if now >= self.due.get(cid, 0)]
+
+        if not due_now:
+            with store.lock:
+                store.poller["message"] = "watching"
+                store.poller["checking"] = False
+            return max(1.0, min(self.due[c] for c in groups) - now)
+
+        span = min(rates.values())
+        need = len(groups) * api.MIN_REQUEST_GAP
+        if need > span and self.capped != (len(groups), span):
+            self.capped = (len(groups), span)
+            store.add_log("warn", f"{span}s interval cannot be met with {len(groups)} cinemas "
+                                  f"-- the {api.MIN_REQUEST_GAP:.0f}s request throttle caps it "
+                                  f"at about {need:.0f}s")
         with store.lock:
             store.poller["checking"] = True
-            store.poller["message"] = f"checking {len(groups)} cinema(s)"
+            store.poller["message"] = f"checking {len(due_now)} cinema(s)"
 
         hit_limit = False
-        for n, (cinema_id, watches) in enumerate(groups.items()):
+        for n, cinema_id in enumerate(due_now):
             if self.stop_flag.is_set():
                 break
             if n:
-                time.sleep(api.jitter(4.5, 0.3))   # gap between cinemas
+                # Abstand zwischen zwei Kinos: normalerweise ~4,5 s, bei sehr
+                # kurzen Intervallen entsprechend weniger -- sonst waere ein
+                # 5-Sekunden-Takt bei zwei Kinos gar nicht erreichbar. Die
+                # harte Untergrenze bleibt api.MIN_REQUEST_GAP.
+                span = min(rates.values())
+                time.sleep(api.jitter(max(api.MIN_REQUEST_GAP, min(4.5, span / 3)), 0.3))
             try:
-                self.check_group(cinema_id, watches)
+                self.check_group(cinema_id, groups[cinema_id])
                 self.fails = 0
+                self.due[cinema_id] = time.time() + api.jitter(rates[cinema_id])
             except api.RateLimited as e:
                 hit_limit = True
                 store.add_log("error", f"Rate limited: {e} -- pausing 15 min")
                 break
             except Exception as e:
                 self.fails += 1
+                self.due[cinema_id] = time.time() + api.jitter(rates[cinema_id])
                 store.add_log("error", f"Check failed ({type(e).__name__}: {e})")
 
         store.save()
@@ -495,6 +946,8 @@ class Watcher(threading.Thread):
 
         if hit_limit:
             until = time.time() + 900
+            for cid in groups:
+                self.due[cid] = time.time() + 900
             with store.lock:
                 store.poller["backoff_until"] = until
                 store.poller["message"] = "backing off after rate limit"
@@ -504,14 +957,16 @@ class Watcher(threading.Thread):
             store.poller["backoff_until"] = None
 
         if self.fails:
-            wait = min(MAX_INTERVAL, interval * (2 ** min(self.fails, 4)))
+            wait = min(MAX_INTERVAL, min(rates.values()) * (2 ** min(self.fails, 4)))
+            for cid in due_now:
+                self.due[cid] = time.time() + wait
             with store.lock:
                 store.poller["message"] = f"backing off ({self.fails} failed checks)"
             return api.jitter(wait)
 
         with store.lock:
             store.poller["message"] = "watching"
-        return api.jitter(interval)
+        return max(1.0, min(self.due.values()) - time.time())
 
     # -- one cinema per request -------------------------------------------
 
@@ -589,7 +1044,7 @@ class Watcher(threading.Thread):
                 if not w.get("booked"):
                     w["checkout_attempts"] = 0
                     w["grabbed"] = None
-            store.add_log("warn", f"{where}: Platz wieder weg ({label})", w["id"])
+            store.add_log("warn", f"{where}: seat gone again ({label})", w["id"])
         elif status != prev and prev is not None:
             store.add_log("warn", f"{where}: {prev} -> {label}", w["id"])
         else:
@@ -675,6 +1130,9 @@ class Handler(BaseHTTPRequestHandler):
                 return self.json(catalogue.programme(slug))
             if u.path == "/api/showtimes":
                 return self.showtimes(q)
+            if u.path == "/api/films":
+                return self.json(film_index.snapshot(
+                    force=(q.get("refresh") or [""])[0] == "1"))
         except api.RateLimited as e:
             return self.fail(f"yorck.de is rate limiting us: {e}", 503)
         except Exception as e:
@@ -810,9 +1268,11 @@ class Handler(BaseHTTPRequestHandler):
             "start": s["start"],
             "date": s["date"],
             "time": s["time"],
-            "date_label": start.strftime("%a %d.%m. %H:%M"),
+            "date_label": date_label(start),
             "formats": s["formats"],
             "allocated": allocated,
+            "interval": DEFAULT_INTERVAL,
+            "ticket_type": DEFAULT_TICKET,
             "checkout_mode": (b.get("checkout_mode")
                               if b.get("checkout_mode") in CHECKOUT_MODES
                               else default_mode()),
@@ -858,14 +1318,36 @@ class Handler(BaseHTTPRequestHandler):
         if action == "mode":
             mode = (body or {}).get("mode")
             if mode not in CHECKOUT_MODES:
-                return self.fail(f"mode muss eins von {CHECKOUT_MODES} sein")
+                return self.fail(f"mode must be one of {CHECKOUT_MODES}")
             if mode == "auto" and w.get("allocated"):
-                return self.fail("Vollautomatik geht nur bei freier Platzwahl "
-                                 "(dieses Kino hat Sitzplatzauswahl)", 409)
+                return self.fail("Auto-booking only works with free seating "
+                                 "(this cinema has assigned seats)", 409)
             with store.lock:
                 w["checkout_mode"] = mode
             store.save()
-            store.add_log("info", f"{w['film_title']}: Buchungsmodus -> {mode}", wid)
+            store.add_log("info", f"{w['film_title']}: mode -> {mode}", wid)
+            return self.json({"watch": w})
+        if action == "interval":
+            try:
+                v = int((body or {}).get("interval"))
+            except (TypeError, ValueError):
+                return self.fail("interval must be a number")
+            if v not in INTERVAL_CHOICES:
+                return self.fail(f"interval must be one of {INTERVAL_CHOICES}")
+            with store.lock:
+                w["interval"] = v
+            store.save()
+            store.add_log("info", f"{w['film_title']}: interval -> {v}s", wid)
+            watcher.wake.set()
+            return self.json({"watch": w})
+        if action == "ticket":
+            t = (body or {}).get("ticket")
+            if t not in TICKET_CHOICES:
+                return self.fail(f"ticket must be one of {TICKET_CHOICES}")
+            with store.lock:
+                w["ticket_type"] = t
+            store.save()
+            store.add_log("info", f"{w['film_title']}: ticket -> {t}", wid)
             return self.json({"watch": w})
         if action == "ack":
             with store.lock:
@@ -876,12 +1358,6 @@ class Handler(BaseHTTPRequestHandler):
 
     def update_settings(self, b: dict):
         with store.lock:
-            if "interval" in b:
-                try:
-                    v = int(b["interval"])
-                except (TypeError, ValueError):
-                    return self.fail("interval must be a number")
-                store.settings["interval"] = max(MIN_INTERVAL, min(MAX_INTERVAL, v))
             for key in ("sound", "desktop"):
                 if key in b:
                     store.settings[key] = bool(b[key])
@@ -937,8 +1413,8 @@ def main():
         channels.append("telegram")
     print(f"Alerts: {', '.join(channels)}")
     print(f"State: {STATE_FILE}")
-    print(f"Interval: {store.settings['interval']}s (jittered), min gap between "
-          f"requests {api.MIN_REQUEST_GAP:.0f}s")
+    print(f"Interval: per screening ({DEFAULT_INTERVAL}s default, jittered), "
+          f"min gap between requests {api.MIN_REQUEST_GAP:.0f}s")
     print("Ctrl+C to stop.\n")
 
     if args.open or args.app:
