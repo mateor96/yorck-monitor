@@ -54,12 +54,19 @@ against the previous crawl, never against the clock: not opening the tab for a
 fortnight is not the same as a film having been away, and a cinema that fails
 mid-crawl does not make its whole programme look new next time.
 
-Each row carries the film's still, and the one you open gets it as a banner.
-These are the 16:9 images from the cinema pages, which come along with the
-crawl for free — the portrait poster exists too, but only on each film's own
-page, which would mean one extra request per film. Contentful resizes them on
-request, so a row thumbnail is ~4 KB instead of the 286 KB original, and they
-load lazily as you scroll.
+Each row carries the film's still — the 16:9 images from the cinema pages,
+which come along with the crawl for free. Contentful resizes them on request,
+so a row thumbnail is ~4 KB instead of the 286 KB original, and they load
+lazily as you scroll.
+
+Open a film and it fills in with its **poster and credits**: director, cast,
+writer, year, country, original title, the synopsis and a trailer link. That
+lives on the film's own page, one page per film — crawling all of them would
+turn ~30 requests into ~140, so it is fetched only for a film you actually
+opened, and only once. Nothing on a film page changes, so the answer is kept
+for a month in `~/.yorck_monitor/films.json` and the next session opens the
+same film for free. It never blocks: the still, the dates and the seat counts
+are there immediately, the poster and the credits arrive behind them.
 
 The horizon is however far Yorck has loaded: presale reaches into next February
 at some houses.
@@ -150,7 +157,8 @@ watched, at most three attempts, exactly as clicking the page yourself would.
 `checkout_drive.py` — drives the checkout in your Chrome (also usable on its own) ·
 `ui.html` — the dashboard, plain HTML/CSS/JS ·
 `~/.yorck_monitor/state.json` — your watches ·
-`~/.yorck_monitor/catalogue.json` — the last programme crawl
+`~/.yorck_monitor/catalogue.json` — the last programme crawl ·
+`~/.yorck_monitor/films.json` — posters and credits of films you opened
 
 ## License
 
