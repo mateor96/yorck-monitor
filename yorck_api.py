@@ -19,6 +19,7 @@ held. Everything is a plain GET.
 
 from __future__ import annotations
 
+import html
 import json
 import random
 import re
@@ -138,6 +139,36 @@ def fetch_cinemas() -> list[dict]:
     return out
 
 
+def _asset_url(node) -> str:
+    """URL out of a Contentful asset, whichever of its two shapes it arrives in.
+
+    The cinema pages nest the file one level deeper than the film pages do, and
+    the payload gives protocol-relative URLs.
+    """
+    if not isinstance(node, dict):
+        return ""
+    f = node.get("fields") if isinstance(node.get("fields"), dict) else node
+    inner = f.get("image")
+    if isinstance(inner, dict):
+        f = inner.get("fields") if isinstance(inner.get("fields"), dict) else inner
+    url = (f.get("file") or {}).get("url")
+    if not isinstance(url, str):
+        return ""
+    return "https:" + url if url.startswith("//") else url
+
+
+_TAGS = re.compile(r"<[^>]+>")
+
+
+def _plain(s) -> str:
+    """Contentful hands `about` over as a scrap of HTML; the UI wants text."""
+    if not isinstance(s, str):
+        return ""
+    s = re.sub(r"(?i)</p\s*>|<br\s*/?>", "\n", s)
+    s = html.unescape(_TAGS.sub("", s))
+    return re.sub(r"\n{3,}", "\n\n", s).strip()
+
+
 def _hero_image(fields: dict) -> str:
     """The film's still from the cinema page, as an absolute URL.
 
@@ -145,13 +176,7 @@ def _hero_image(fields: dict) -> str:
     page, which would be one extra request per film. Contentful serves it, so
     the caller can ask for any size by appending ?w=..&h=..&fm=webp.
     """
-    try:
-        url = fields["heroImage"]["fields"]["image"]["fields"]["file"]["url"]
-    except (KeyError, TypeError):
-        return ""
-    if not isinstance(url, str):
-        return ""
-    return "https:" + url if url.startswith("//") else url
+    return _asset_url(fields.get("heroImage"))
 
 
 def fetch_programme(slug: str) -> dict:
@@ -202,6 +227,44 @@ def fetch_programme(slug: str) -> dict:
 
     films.sort(key=lambda f: f["title"].lower())
     return {"films": films, "dates": sorted(dates)}
+
+
+def fetch_film(slug: str) -> dict:
+    """
+    One film's own page: the portrait poster, and everything the cinema pages
+    leave out -- director, cast, year, original title, synopsis, trailer.
+
+    This is the one lookup that cannot be batched: it is a page per film. So it
+    is never crawled, only fetched for a film somebody actually opened, and the
+    caller is expected to remember the answer -- none of it changes.
+    """
+    try:
+        pp = _next_data(f"/en/films/{urllib.parse.quote(slug)}")["props"]["pageProps"]
+    except urllib.error.HTTPError as e:
+        if e.code == 404:
+            raise LookupError(f"no film page for {slug!r}") from e
+        raise
+    film = pp.get("film")
+    f = film.get("fields") if isinstance(film, dict) else None
+    if not isinstance(f, dict):
+        # Some slugs answer 200 with a page that carries no film at all.
+        raise LookupError(f"no film page for {slug!r}")
+    countries = f.get("countries")
+    return {
+        "slug": slug,
+        "poster": _asset_url(f.get("poster")),
+        "director": (f.get("director") or "").strip(),
+        "cast": (f.get("cast") or "").strip(),
+        "writer": (f.get("writer") or "").strip(),
+        "year": f.get("year"),
+        "original_title": (f.get("originalTitle") or "").strip(),
+        "language": (f.get("originalLanguage") or "").strip(),
+        "countries": [c for c in (countries or []) if isinstance(c, str)],
+        "distributor": (f.get("distributor") or "").strip(),
+        "tagline": (f.get("tagline") or "").strip(),
+        "about": _plain(f.get("about")),
+        "trailer": (f.get("trailer1YouTubeId") or "").strip(),
+    }
 
 
 # --------------------------------------------------------------------------

@@ -47,6 +47,7 @@ STATE_DIR = os.path.expanduser("~/.yorck_monitor")
 STATE_FILE = os.path.join(STATE_DIR, "state.json")
 LOG_FILE = os.path.join(STATE_DIR, "log.jsonl")
 FILMS_FILE = os.path.join(STATE_DIR, "catalogue.json")
+DETAILS_FILE = os.path.join(STATE_DIR, "films.json")
 LOG_KEEP_SECONDS = 24 * 3600
 
 DEFAULT_INTERVAL = 60
@@ -62,6 +63,8 @@ CATALOGUE_TTL = 30 * 60   # programme pages are static; re-read at most every 30
 CINEMAS_TTL = 6 * 60 * 60
 FILMS_TTL = 30 * 60       # how long a full crawl of every cinema stays good
 NEW_FOR = 7 * 24 * 3600   # how long a film that just appeared keeps its badge
+DETAILS_TTL = 30 * 24 * 3600   # cast and poster do not change; keep them a month
+DETAILS_MISS_TTL = 24 * 3600   # ...but a film page may still be published later
 FORGET_AFTER = 90 * 24 * 3600   # ...and how long we remember one that left
 
 
@@ -556,6 +559,74 @@ class FilmIndex:
 
 
 film_index = FilmIndex()
+
+
+class FilmDetails:
+    """
+    Poster and credits for one film, fetched only when somebody opens it.
+
+    This is the one thing that cannot be batched -- a page per film, so pulling
+    all of them would turn a ~30 request crawl into ~140. Opening ten films in
+    an evening costs ten requests instead, each one paid only the first time:
+    nothing on a film page changes, so the answer is kept for a month and
+    written to disk, and the next session opens the same film for free.
+    """
+
+    def __init__(self):
+        self.lock = threading.Lock()
+        self.cache: dict[str, dict] = {}    # slug -> {"at": ts, "film": {...}}
+        self._load()
+
+    def _load(self):
+        try:
+            with open(DETAILS_FILE) as f:
+                d = json.load(f)
+            if isinstance(d, dict):
+                self.cache = {k: v for k, v in d.items() if isinstance(v, dict)}
+        except Exception:
+            pass
+
+    def _persist(self):
+        try:
+            os.makedirs(STATE_DIR, exist_ok=True)
+            tmp = DETAILS_FILE + ".tmp"
+            with open(tmp, "w") as f:
+                json.dump(self.cache, f)
+            os.replace(tmp, DETAILS_FILE)
+        except Exception as e:
+            store.add_log("warn", f"could not save film details: {e}")
+
+    def get(self, slug: str) -> dict:
+        with self.lock:
+            hit = self.cache.get(slug)
+            if hit:
+                age = time.time() - hit.get("at", 0)
+                if hit.get("film") is None:
+                    if age < DETAILS_MISS_TTL:
+                        raise LookupError(f"no film page for {slug!r}")
+                elif age < DETAILS_TTL:
+                    return hit["film"]
+        # Fetched outside the lock, like the programme pages: two clicks on the
+        # same film at once would rather cost one spare request than make every
+        # other film wait behind this one.
+        try:
+            film = api.fetch_film(slug)
+        except LookupError:
+            # Series and event entries ("Best of Cinema", "Additional date: ...")
+            # are in the programme but have no film page. Remember that, or every
+            # click on one would go and ask again -- but only for a day, because
+            # a new release can get its page after it is already on sale.
+            with self.lock:
+                self.cache[slug] = {"at": time.time(), "film": None}
+            self._persist()
+            raise
+        with self.lock:
+            self.cache[slug] = {"at": time.time(), "film": film}
+        self._persist()
+        return film
+
+
+details = FilmDetails()
 
 
 # ---------------------------------------------------------------------------
@@ -1130,6 +1201,14 @@ class Handler(BaseHTTPRequestHandler):
                 return self.json(catalogue.programme(slug))
             if u.path == "/api/showtimes":
                 return self.showtimes(q)
+            if u.path == "/api/film":
+                slug = (q.get("slug") or [""])[0]
+                if not slug:
+                    return self.fail("slug missing")
+                try:
+                    return self.json({"film": details.get(slug)})
+                except LookupError as e:
+                    return self.fail(str(e), 404)
             if u.path == "/api/films":
                 return self.json(film_index.snapshot(
                     force=(q.get("refresh") or [""])[0] == "1"))

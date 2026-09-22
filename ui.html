@@ -257,10 +257,25 @@
       overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 
   .fd{overflow-y:auto;flex:1;min-height:0;padding:12px 13px}
-  .fd-hero{
-    width:100%;max-height:200px;object-fit:cover;display:block;
-    border-radius:9px;border:1px solid var(--hairline);margin-bottom:11px;
+  /* Plakat links, Fakten rechts. Der Kasten hat feste Masse und steht schon,
+     bevor das Plakat da ist -- sonst springt der Text, wenn es ankommt. Bis
+     dahin fuellt das 16:9-Bild aus der Liste die Flaeche. */
+  .fd-top{display:flex;gap:13px;align-items:flex-start;margin-bottom:11px}
+  .fd-poster{
+    width:132px;aspect-ratio:2/3;flex:none;object-fit:cover;display:block;
+    border-radius:7px;border:1px solid var(--hairline);background:var(--panel-2);
   }
+  .fd-facts{min-width:0;flex:1}
+  .fd-orig{color:var(--dim);font-size:11.5px;margin-top:3px}
+  .fd-credits{margin-top:8px;font-size:11.5px;line-height:1.5}
+  .fd-credits div{display:flex;gap:7px}
+  .fd-credits dt{color:var(--faint);flex:none;width:58px}
+  .fd-credits dd{margin:0;color:var(--dim);min-width:0}
+  .fd-about{
+    color:var(--dim);font-size:12px;line-height:1.55;margin:0 0 4px;
+    white-space:pre-wrap;
+  }
+  .fd-tagline{color:var(--faint);font-size:11.5px;font-style:italic;margin-top:5px}
   .fd-title{font-weight:600;font-size:15px;line-height:1.25}
   .fd-meta{color:var(--dim);font-size:11px;margin-top:3px}
   .fd-links{display:flex;gap:6px;margin-top:9px;align-items:center;flex-wrap:wrap}
@@ -725,6 +740,7 @@ const showText = (s, n) => (SHOW_TEXT[s] || SHOW_TEXT.unknown)(n);
 
 /* Contentful skaliert selbst -- ein Listenbild sind so 0,8 KB statt 286.
    Ohne das laedt die Seite 109 Originale zu je einem Viertel Megabyte. */
+const shotW = (url, w) => url ? `${url}?w=${w}&fm=webp&q=78` : '';
 const shot = (url, w) => url
   ? `${url}?w=${w}&h=${Math.round(w * 9 / 16)}&fit=fill&fm=webp&q=72` : '';
 
@@ -742,6 +758,28 @@ function dayLabel(d) {
   if (d === today()) return 'Today';
   return new Date(d + 'T12:00').toLocaleDateString('en-GB',
     { weekday: 'short', day: 'numeric', month: 'short' });
+}
+
+/* Was die Kinoseiten nicht hergeben, holt der Server pro Film einzeln nach.
+   Einmal geklickt, einmal bezahlt: die Antwort bleibt hier liegen. */
+const DETAILS = {};
+
+async function loadDetail(slug) {
+  if (!slug || slug in DETAILS) return;
+  DETAILS[slug] = null;                       // in Arbeit, kein zweiter Anlauf
+  try {
+    const { film } = await api('/api/film?slug=' + encodeURIComponent(slug));
+    DETAILS[slug] = film;
+    const f = FILMS && FILMS.films.find(x => x.key === filmKey);
+    if (f && f.slug === slug) renderFilmDetail();   // nur wenn noch derselbe offen ist
+  } catch (e) {
+    /* 404 heisst: dieser Eintrag hat gar keine Filmseite -- Reihen wie
+       "Best of Cinema" stehen im Programm, aber nicht im Filmkatalog. Das
+       merken wir uns, sonst fragt jeder Klick erneut. Alles andere ist eine
+       Stoerung und darf es beim naechsten Mal nochmal versuchen. */
+    if (e.status === 404) DETAILS[slug] = false;
+    else delete DETAILS[slug];
+  }
 }
 
 async function loadFilms(force) {
@@ -866,16 +904,38 @@ function renderFilmDetail() {
     else last.shows.push(s);
   }
 
+  const d = DETAILS[f.slug] || null;
+  loadDetail(f.slug);
+
+  const sub = [d && d.original_title !== f.title ? d.original_title : '',
+               d && d.year, d && (d.countries || []).join(', ')]
+              .filter(Boolean).join(' · ');
+  const credits = [['Director', d && d.director], ['Cast', d && d.cast],
+                   ['Writer', d && d.writer], ['Language', d && d.language]]
+    .filter(([, v]) => v)
+    .map(([k, v]) => `<div><dt>${k}</dt><dd>${esc(v)}</dd></div>`).join('');
+
   box.scrollTop = 0;
   box.innerHTML = `
     <button class="btn backbtn" id="f-back">← all films</button>
-    ${f.image ? `<img class="fd-hero" alt="" src="${esc(shot(f.image, 900))}">` : ''}
-    <div class="fd-title">${esc(f.title)}${f.new ? '<span class="tag-new">new</span>' : ''}</div>
-    <div class="fd-meta">${esc(meta)}</div>
-    <div class="fd-links">
-      <a class="btn" target="_blank" rel="noopener"
-         href="https://www.yorck.de/en/films/${encodeURIComponent(f.slug)}">on yorck.de →</a>
+    <div class="fd-top">
+      <img class="fd-poster" alt=""
+           src="${esc(d && d.poster ? shotW(d.poster, 400) : shot(f.image, 400))}">
+      <div class="fd-facts">
+        <div class="fd-title">${esc(f.title)}${f.new ? '<span class="tag-new">new</span>' : ''}</div>
+        ${sub ? `<div class="fd-orig">${esc(sub)}</div>` : ''}
+        <div class="fd-meta">${esc(meta)}</div>
+        ${credits ? `<dl class="fd-credits">${credits}</dl>` : ''}
+        <div class="fd-links">
+          <a class="btn" target="_blank" rel="noopener"
+             href="https://www.yorck.de/en/films/${encodeURIComponent(f.slug)}">on yorck.de →</a>
+          ${d && d.trailer ? `<a class="btn" target="_blank" rel="noopener"
+             href="https://www.youtube.com/watch?v=${encodeURIComponent(d.trailer)}">trailer →</a>` : ''}
+        </div>
+      </div>
     </div>
+    ${d && d.about ? `<p class="fd-about">${esc(d.about)}</p>` : ''}
+    ${d && d.tagline ? `<div class="fd-tagline">${esc(d.tagline)}</div>` : ''}
     ${days.map(d => `
       <div class="fd-day">
         <div class="fd-date">${esc(dayLabel(d.date))}</div>
