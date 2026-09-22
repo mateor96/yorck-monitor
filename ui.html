@@ -416,12 +416,20 @@ const TICKET_OPTIONS = [
   ['Begleitticket (Unlimited 10%)', 'Begleitticket — 10 % off'],
   ['Normal (Online)', 'Normal (Online) — full price'],
 ];
+/* "auto" follows the clock: ten minutes weeks out, a minute on the day,
+   fifteen seconds in the last two hours. The option label is filled in with
+   what that resolves to right now, so the card never hides the real rate. */
+const AUTO_TITLE = 'Follows the showtime: every 10 min more than a week out, '
+  + '5 min this week, 1 min on the day, 30 s in the afternoon before, '
+  + '15 s in the last two hours';
 const IV_OPTIONS = [
+  ['auto', 'auto'],
   [5, 'every 5s'], [8, 'every 8s'], [10, 'every 10s'],
   [15, 'every 15s'], [20, 'every 20s'], [30, 'every 30s'], [45, 'every 45s'],
   [60, 'every 60s'], [90, 'every 90s'], [120, 'every 120s'],
   [300, 'every 5 min'], [600, 'every 10 min'],
 ];
+const ivText = s => (IV_OPTIONS.find(o => o[0] === s) || [s, `every ${s}s`])[1];
 
 /* ---------- Helfer ---------- */
 const pad = n => String(n).padStart(2, '0');
@@ -530,7 +538,8 @@ function buildCard(w) {
         }).join('')}
       </select>
       <select class="ivsel" data-id="${w.id}" aria-label="Check interval">
-        ${IV_OPTIONS.map(([v, t]) => `<option value="${v}">${t}</option>`).join('')}
+        ${IV_OPTIONS.map(([v, t]) =>
+          `<option value="${v}"${v === 'auto' ? ` title="${AUTO_TITLE}"` : ''}>${t}</option>`).join('')}
       </select>
     </div>
     <div class="opts ticketrow">
@@ -579,7 +588,12 @@ function updateCard(el, w) {
     mode.dataset.mode = mode.value;
   }
   const iv = el.querySelector('.ivsel');
-  if (document.activeElement !== iv) iv.value = String(w.interval || 60);
+  const isAuto = w.interval == null || w.interval === 'auto';
+  if (document.activeElement !== iv) iv.value = isAuto ? 'auto' : String(w.interval);
+  /* The auto row says what it is doing right now, e.g. "auto · every 60s". */
+  const autoLabel = 'auto · ' + ivText(w.interval_now);
+  if (iv.options[0].textContent !== autoLabel) iv.options[0].textContent = autoLabel;
+  if (iv.title !== (isAuto ? AUTO_TITLE : '')) iv.title = isAuto ? AUTO_TITLE : '';
 
   const trow = el.querySelector('.ticketrow');
   const auto = (w.checkout_mode || 'open') === 'auto' && !w.allocated;
@@ -1049,7 +1063,7 @@ document.addEventListener('change', async ev => {
   if (isMode) el.dataset.mode = el.value;
   const path = isMode ? 'mode' : isIv ? 'interval' : 'ticket';
   const body = isMode ? { mode: el.value }
-             : isIv ? { interval: +el.value }
+             : isIv ? { interval: el.value === 'auto' ? 'auto' : +el.value }
              : { ticket: el.value };
   try {
     await post(`/api/watch/${el.dataset.id}/${path}`, body);
