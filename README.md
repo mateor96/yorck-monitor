@@ -22,9 +22,10 @@ Python 3.9+, no dependencies. `Ctrl+C` to stop — watches are saved and resume.
 
 Two tabs at the top. **Monitor** is the watcher; **Programme** is the catalogue.
 
-Pick a cinema and a day, click a screening, done. Every ~90 s it re-checks and
-tells you the seat count. When something frees up the card turns green, a sound
-plays and a **Book now** button appears that links straight into the checkout.
+Pick a cinema and a day, click a screening, done. It re-checks on a schedule
+that tightens as the screening approaches and tells you the seat count after
+every check. When something frees up the card turns green, a sound plays and a
+**Book now** button appears that links straight into the checkout.
 
 ## Finding the films nobody announces
 
@@ -70,6 +71,17 @@ are there immediately, the poster and the credits arrive behind them.
 
 The horizon is however far Yorck has loaded: presale reaches into next February
 at some houses.
+
+### How often it checks
+
+Returned tickets cluster on the day of the show. The two screenings this was
+first used for saw their seats come back nine and eleven hours before the
+start — and gone again inside a single ten-minute check. A fixed interval is
+either wasteful for the three weeks before or too slow on the day, so the
+default is **auto**: every 10 minutes more than a week out, 5 minutes this
+week, once a minute on the day, every 30 s in the afternoon before, every
+15 s in the last two hours. The card shows what that resolves to right now.
+A fixed interval can still be picked per card, and is honoured as chosen.
 
 ### When a seat frees up
 

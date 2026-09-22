@@ -8,7 +8,9 @@ Yorck cinemas and tells you the moment a seat frees up.
     python3 yorck_monitor.py --port 4100
 
 Pick a cinema, a day and a film in the browser; the watcher then checks that
-screening every ~90 seconds and reports back after every single check.
+screening on a schedule that tightens as it approaches -- every ten minutes
+weeks out, every minute on the day, every fifteen seconds in the last two
+hours -- and reports back after every single check.
 It never books anything -- it only shows you when to.
 
 Design notes on not getting blocked:
@@ -54,6 +56,20 @@ DEFAULT_INTERVAL = 60
 MIN_INTERVAL = 5
 INTERVAL_CHOICES = (5, 8, 10, 15, 20, 30, 45, 60, 90, 120, 300, 600)
 MAX_INTERVAL = 900
+AUTO_INTERVAL = "auto"
+# What "auto" checks at, by time left until the screening starts:
+# (at least this many seconds away, check every this many seconds).
+# Returned tickets cluster on the day itself. The two watches this was
+# written for saw their seats come back nine and eleven hours before the
+# show, and gone again inside a single ten-minute check. Weeks out, ten
+# minutes is plenty; in the last two hours it is not.
+AUTO_SCHEDULE = (
+    (7 * 86400, 600),   # more than a week out: every 10 min
+    (86400, 300),       # this week: every 5 min
+    (6 * 3600, 60),     # the day of: every minute
+    (2 * 3600, 30),     # the afternoon before: every 30 s
+    (0, 15),            # the last two hours: every 15 s
+)
 MIN_CYCLE_GAP = 3     # floor between two check cycles, however often the UI pokes us
 
 MAX_LOG = 400        # global feed entries kept in memory
@@ -215,8 +231,13 @@ class Store:
 
     def snapshot(self) -> dict:
         with self.lock:
+            watches = json.loads(json.dumps(self.watches))
+            now = time.time()
+            for w in watches:
+                # What "auto" resolves to right now, so the card can say so.
+                w["interval_now"] = watch_interval(w, now)
             return {
-                "watches": json.loads(json.dumps(self.watches)),
+                "watches": watches,
                 "log": self.log[-120:],
                 "settings": dict(self.settings),
                 "poller": dict(self.poller),
@@ -694,12 +715,35 @@ def default_mode() -> str:
     return DEFAULT_CHECKOUT_MODE
 
 
-def watch_interval(w: dict) -> int:
-    """Wie oft diese eine Vorstellung geprueft wird, in Sekunden."""
+def auto_interval(w: dict, now: float | None = None) -> int:
+    """The AUTO_SCHEDULE step for how far away this screening is."""
     try:
-        v = int(w.get("interval") or DEFAULT_INTERVAL)
+        left = _parse_start(w["start"]).timestamp() - (now or time.time())
+    except (KeyError, TypeError, ValueError):
+        return DEFAULT_INTERVAL
+    for at_least, seconds in AUTO_SCHEDULE:
+        if left >= at_least:
+            return seconds
+    return AUTO_SCHEDULE[-1][1]
+
+
+def watch_interval(w: dict, now: float | None = None) -> int:
+    """
+    How often this one screening is checked, in seconds.
+
+    A fixed number is honoured as chosen. "auto" (the default for new
+    watches) follows the clock instead: a screening three weeks out is
+    checked every ten minutes, one starting in an hour every fifteen seconds.
+    A seat that comes back and is taken again inside ten minutes is invisible
+    to a ten-minute check, and the day of the show is when that happens.
+    """
+    v = w.get("interval")
+    if v is None or v == AUTO_INTERVAL:
+        return auto_interval(w, now)
+    try:
+        v = int(v)
     except (TypeError, ValueError):
-        v = DEFAULT_INTERVAL
+        return auto_interval(w, now)
     return max(MIN_INTERVAL, min(MAX_INTERVAL, v))
 
 
@@ -1350,7 +1394,7 @@ class Handler(BaseHTTPRequestHandler):
             "date_label": date_label(start),
             "formats": s["formats"],
             "allocated": allocated,
-            "interval": DEFAULT_INTERVAL,
+            "interval": AUTO_INTERVAL,
             "ticket_type": DEFAULT_TICKET,
             "checkout_mode": (b.get("checkout_mode")
                               if b.get("checkout_mode") in CHECKOUT_MODES
@@ -1407,16 +1451,22 @@ class Handler(BaseHTTPRequestHandler):
             store.add_log("info", f"{w['film_title']}: mode -> {mode}", wid)
             return self.json({"watch": w})
         if action == "interval":
-            try:
-                v = int((body or {}).get("interval"))
-            except (TypeError, ValueError):
-                return self.fail("interval must be a number")
-            if v not in INTERVAL_CHOICES:
-                return self.fail(f"interval must be one of {INTERVAL_CHOICES}")
+            raw = (body or {}).get("interval")
+            if raw == AUTO_INTERVAL:
+                v = AUTO_INTERVAL
+            else:
+                try:
+                    v = int(raw)
+                except (TypeError, ValueError):
+                    return self.fail("interval must be 'auto' or a number")
+                if v not in INTERVAL_CHOICES:
+                    return self.fail(f"interval must be 'auto' or one of {INTERVAL_CHOICES}")
             with store.lock:
                 w["interval"] = v
             store.save()
-            store.add_log("info", f"{w['film_title']}: interval -> {v}s", wid)
+            shown = (f"auto (every {watch_interval(w)}s for now)"
+                     if v == AUTO_INTERVAL else f"{v}s")
+            store.add_log("info", f"{w['film_title']}: interval -> {shown}", wid)
             watcher.wake.set()
             return self.json({"watch": w})
         if action == "ticket":
@@ -1492,7 +1542,9 @@ def main():
         channels.append("telegram")
     print(f"Alerts: {', '.join(channels)}")
     print(f"State: {STATE_FILE}")
-    print(f"Interval: per screening ({DEFAULT_INTERVAL}s default, jittered), "
+    print(f"Interval: per screening, auto by default "
+          f"({AUTO_SCHEDULE[0][1]}s weeks out down to {AUTO_SCHEDULE[-1][1]}s "
+          f"in the last two hours, jittered), "
           f"min gap between requests {api.MIN_REQUEST_GAP:.0f}s")
     print("Ctrl+C to stop.\n")
 
